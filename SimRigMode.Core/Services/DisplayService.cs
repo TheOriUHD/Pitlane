@@ -90,6 +90,18 @@ public sealed class DisplayService
     }
 
     /// <summary>
+    /// Re-applies the layout currently on screen and asks Windows to REMEMBER it. This is the
+    /// only place SDC_SAVE_TO_DATABASE is used, it is reachable only from an explicit button, and
+    /// mode switching never calls it. It exists so the persisted display database can be repaired
+    /// deliberately - including cleaning up what the incident wrote into it.
+    /// </summary>
+    public int PersistCurrentTopologyAsWindowsDefault()
+    {
+        var live = CaptureCurrent();
+        return Submit(live, N.SDC_USE_SUPPLIED_DISPLAY_CONFIG | N.SDC_APPLY | N.SDC_SAVE_TO_DATABASE | N.SDC_ALLOW_CHANGES);
+    }
+
+    /// <summary>
     /// Submits a topology and returns the raw Win32 result. The flags are supplied by the
     /// caller, which is what lets DisplayApplyEngine validate before it applies and roll back
     /// afterwards. Note there is no overload that defaults to SDC_SAVE_TO_DATABASE: persisting

@@ -86,6 +86,8 @@ public sealed partial class SettingsWindow : Window
     private void LoadConfigIntoControls()
     {
         StartupToggle.IsOn = _host.StartWithWindows.IsEnabled;
+        UsbArmedToggle.IsOn = Config.General.UsbSwitchingArmed;
+        DryRunToggle.IsOn = Config.General.DryRunTransitions;
         HotkeysToggle.IsOn = Config.General.HotkeysEnabled;
         HotkeysExpander.IsExpanded = Config.General.HotkeysEnabled;
         DesktopHotkeyText.Text = Config.General.DesktopHotkey;
@@ -158,15 +160,20 @@ public sealed partial class SettingsWindow : Window
     {
         if (sender is not Button { Tag: string tag }) return;
         _displayEditingMode = tag == "desktop" ? WorkspaceMode.Desktop : WorkspaceMode.SimRig;
-        DisplayEditorInfoBar.Title = $"Editing {(_displayEditingMode == WorkspaceMode.Desktop ? "Desktop" : "Sim rig")} mode";
-        DisplayEditorInfoBar.Message = "Select a monitor tile, then turn its workspace switch on or off.";
+        // Both workspace switches are live on this page regardless of which button opened it,
+        // so the banner must not claim otherwise - it used to say "Editing Desktop mode" while
+        // editing either, and the field it set was never read again.
+        DisplayEditorInfoBar.Title = "Choose which displays belong to each workspace";
+        DisplayEditorInfoBar.Message = $"Select a monitor tile, then use its Desktop and Sim rig switches. You came here from {(_displayEditingMode == WorkspaceMode.Desktop ? "Desktop" : "Sim rig")} mode.";
         DisplayEditorInfoBar.IsOpen = true; SelectNavigation("displays");
     }
     private async Task CaptureAsync(ModeConfig mode, InfoBar info)
     {
         try
         {
-            mode.Displays = _host.Displays.CaptureCurrent(); await _host.Configuration.SaveAsync(); _liveDisplays = mode.Displays;
+            // Off the UI thread: QueryDisplayConfig plus a DisplayConfigGetDeviceInfo per path per
+            // name is synchronous native work, and RefreshDisplaysAsync already offloaded it.
+            mode.Displays = await Task.Run(_host.Displays.CaptureCurrent); await _host.Configuration.SaveAsync(); _liveDisplays = mode.Displays;
             RenderDisplays(); UpdateSummaries(); ShowInfo(info, "Display profile captured", $"Saved {mode.Displays.Paths.Count} active displays with exact topology and timing.", InfoBarSeverity.Success);
         }
         catch (Exception ex) { Report(info, "Display capture failed", ex); }
@@ -227,6 +234,15 @@ public sealed partial class SettingsWindow : Window
         SelectedDisplayCard.Header = $"Display {number} • {path.FriendlyName}";
         SelectedDisplayCard.Description = mode is null ? "Currently unavailable" : $"{mode.Width} × {mode.Height} • {RefreshText(path)}{primary}";
         DisplayIdentityText.Text = $"{path.SourceName}\n{path.MonitorDevicePath}".Trim();
+        if (path.IsIndirect && !path.IndirectOptIn)
+        {
+            // Explain why this display will not follow the mode switch. Without this the
+            // behaviour looks like a bug rather than the deliberate protection it is.
+            SelectedDisplayCard.Description += "  \u2022  Carried through unchanged";
+            DisplayIdentityText.Text += "\n\n" + path.IndirectReason +
+                "\n\nSimRigMode leaves this display exactly as it is when switching modes. Repeatedly " +
+                "removing and re-adding an indirect display is what triggered the 2026-09-13 incident.";
+        }
         _loadingValues = true;
         DisplayDesktopEnabled.IsOn = ContainsDisplay(Config.Desktop.Displays, path); DisplayRigEnabled.IsOn = ContainsDisplay(Config.SimRig.Displays, path);
         _loadingValues = false;
@@ -280,11 +296,19 @@ public sealed partial class SettingsWindow : Window
     private static string RefreshText(DisplayPathRecord path) => path.RefreshDenominator == 0 ? "Unknown Hz" : $"{(double)path.RefreshNumerator / path.RefreshDenominator:0.##} Hz";
 
     private async void RefreshUsb_Click(object sender, RoutedEventArgs e) => await RefreshUsbAsync(true);
-    private async Task RefreshUsbAsync(bool announce = false)
+
+    /// <summary>
+    /// Opt-in deep scan. This opens every hub and issues several hundred synchronous IOCTLs
+    /// across the bus, including control transfers that wake devices out of selective suspend.
+    /// It used to happen on every refresh; it is now something the user asks for.
+    /// </summary>
+    private async void DeepScanUsb_Click(object sender, RoutedEventArgs e) => await RefreshUsbAsync(true, deepScan: true);
+
+    private async Task RefreshUsbAsync(bool announce = false, bool deepScan = false)
     {
         try
         {
-            _usbTopology = await Task.Run(() => new UsbTopologyService(_host.Usb).Enumerate()); _usbRows.Clear(); _hubDisableOverrides.Clear();
+            _usbTopology = await Task.Run(() => new UsbTopologyService(_host.Usb).Enumerate(deepScan)); _usbRows.Clear(); _hubDisableOverrides.Clear();
             AddUnavailableUsbRules(_usbTopology);
             foreach (var node in _usbTopology.Flatten())
             {
@@ -295,7 +319,11 @@ public sealed partial class SettingsWindow : Window
             RebuildUsbTree(); UpdateUsbEffectivePolicies();
             var physical = _usbTopology.Flatten().Count(node => node.Kind is UsbTopologyNodeKind.Hub or UsbTopologyNodeKind.Device);
             UsbCountText.Text = $"{physical} physical devices across {_usbTopology.Flatten().Count(node => node.Kind == UsbTopologyNodeKind.HostController)} host controllers";
-            if (announce) ShowInfo(UsbInfoBar, "Topology refreshed", $"Mapped {physical} physical USB devices through their real hub and port chains.", InfoBarSeverity.Success);
+            if (announce) ShowInfo(UsbInfoBar, deepScan ? "Deep scan complete" : "Topology refreshed",
+                deepScan
+                    ? $"Queried {physical} physical USB devices for names, speeds and port numbers."
+                    : $"Mapped {physical} physical USB devices. Use Deep scan for port numbers, speeds and product names.",
+                InfoBarSeverity.Success);
         }
         catch (Exception ex) { Report(UsbInfoBar, "USB refresh failed", ex); }
     }
@@ -338,7 +366,18 @@ public sealed partial class SettingsWindow : Window
     {
         var node = row.Node; UsbDetailsExpander.Header = node.Name; UsbDetailsExpander.Description = row.Detail;
         UsbDetailsText.Text = $"Name: {node.Name}\nManufacturer: {node.Manufacturer}\nVID / PID: {node.Vid} / {node.Pid}\nSerial: {node.Serial}\nInstance ID: {node.InstanceId}\nContainer ID: {node.ContainerId}\nParent: {node.Parent?.Name}\nPhysical port chain: {node.PortChain}\nUSB speed: {node.Speed}\nLocation: {node.LocationPath}\nClass: {node.DeviceClass}\nStatus: {(node.IsPresent ? node.IsEnabled ? "Connected and enabled" : "Present but disabled" : "Missing")}";
-        var externalHub = node.Kind == UsbTopologyNodeKind.Hub && !node.IsCritical; _loadingValues = true; DisableHubItselfToggle.IsEnabled = externalHub; DisableHubItselfToggle.IsOn = _hubDisableOverrides.GetValueOrDefault(node.IdentityKey); _loadingValues = false;
+        // Disabling a hub disconnects its whole branch, and the resolver deliberately does NOT
+        // operate the children in that case - so a keyboard or mouse downstream is collateral
+        // rather than protected. If the branch holds anything protected the toggle is disabled
+        // outright and the description says what is in the way, rather than merely warning.
+        var protectedNames = node.CriticalDescendantNames;
+        var externalHub = node.Kind == UsbTopologyNodeKind.Hub && !node.IsSelfCritical && !node.HasCriticalDescendant;
+        _loadingValues = true;
+        DisableHubItselfToggle.IsEnabled = externalHub;
+        DisableHubItselfToggle.IsOn = externalHub && _hubDisableOverrides.GetValueOrDefault(node.IdentityKey);
+        _loadingValues = false;
+        if (node.Kind == UsbTopologyNodeKind.Hub && !externalHub && protectedNames.Count > 0)
+            UsbDetailsExpander.Description = "Cannot disable this hub itself: it carries " + string.Join(", ", protectedNames.Take(4));
         var affected = node.Flatten().Where(child => child.Kind is UsbTopologyNodeKind.Hub or UsbTopologyNodeKind.Device).ToList(); UsbAffectedText.Text = $"{affected.Count} physical device{(affected.Count == 1 ? "" : "s")}: " + string.Join(", ", affected.Take(8).Select(child => child.Name)) + (affected.Count > 8 ? $" and {affected.Count - 8} more" : "");
     }
     private void DisableHubItselfToggle_Toggled(object sender, RoutedEventArgs e) { if (_loadingValues || _selectedUsbRow is null) return; _hubDisableOverrides[_selectedUsbRow.Node.IdentityKey] = DisableHubItselfToggle.IsOn; }
@@ -361,9 +400,23 @@ public sealed partial class SettingsWindow : Window
     }
     private async Task<bool> SaveUsbRulesWithSafetyPromptAsync()
     {
-        foreach (var row in _usbRows.Where(r => r.Node.Flatten().Any(node => node.IsCritical) && (r.Desktop == DeviceModeAction.Disabled || r.SimRig == DeviceModeAction.Disabled)))
+        foreach (var row in _usbRows.Where(r => r.Node.IsCritical && (r.Desktop == DeviceModeAction.Disabled || r.SimRig == DeviceModeAction.Disabled)))
         {
-            var result = await ConfirmAsync("Protected USB branch", $"{row.Name} contains or is a protected controller, root hub, keyboard, or mouse. Disabling this branch can disconnect system input.", "Allow rule"); if (!result) return false;
+            var affected = row.Node.CriticalDescendantNames;
+            var detail = affected.Count > 0
+                ? "It carries: " + string.Join(", ", affected.Take(6)) + "."
+                : "This device is itself protected.";
+            var result = await ConfirmAsync("Protected USB branch",
+                $"{row.Name} is protected because disabling it can disconnect system input. {detail}\n\n" +
+                "SimRigMode will still refuse to disable the protected devices themselves, but the rest of the branch will go.",
+                "Allow rule");
+            // Declining used to abandon the whole save with no message, silently discarding every
+            // unsaved edit on the page.
+            if (!result)
+            {
+                ShowInfo(UsbInfoBar, "Nothing was saved", $"The rule for {row.Name} was not confirmed, so no policy changes were saved. Your edits are still on screen.", InfoBarSeverity.Informational);
+                return false;
+            }
         }
         Config.UsbRules = _usbRows.Where(r => r.CanConfigure && (r.Desktop != DeviceModeAction.DoNotChange || r.SimRig != DeviceModeAction.DoNotChange)).Select(r =>
         {
@@ -373,7 +426,10 @@ public sealed partial class SettingsWindow : Window
             var targets = affected.Count > 0
                 ? affected.Select(child => new UsbRuleTarget { InstanceId = child.InstanceId, FriendlyName = child.Name, IsCritical = child.IsCritical }).ToList()
                 : existing?.LastKnownTargets ?? [];
-            return new UsbRule { IdentityKey = n.IdentityKey, InstanceId = n.InstanceId, FriendlyName = n.Name.Replace(" (unavailable)", "", StringComparison.Ordinal), ContainerId = n.ContainerId, Vid = n.Vid, Pid = n.Pid, Serial = n.Serial, LocationPath = n.LocationPath, PortChain = n.PortChain, IsSubtree = n.Kind == UsbTopologyNodeKind.Hub || existing?.IsSubtree == true, DisableHubItself = _hubDisableOverrides.GetValueOrDefault(n.IdentityKey), Desktop = r.Desktop, SimRig = r.SimRig, CriticalDeviceAcknowledged = !n.IsCritical, LastKnownTargets = targets };
+            return new UsbRule { IdentityKey = n.IdentityKey, InstanceId = n.InstanceId, FriendlyName = n.Name.Replace(" (unavailable)", "", StringComparison.Ordinal), ContainerId = n.ContainerId, Vid = n.Vid, Pid = n.Pid, Serial = n.Serial, LocationPath = n.LocationPath, PortChain = n.PortChain, IsSubtree = n.Kind == UsbTopologyNodeKind.Hub || existing?.IsSubtree == true, DisableHubItself = _hubDisableOverrides.GetValueOrDefault(n.IdentityKey), Desktop = r.Desktop, SimRig = r.SimRig, // Recorded only when the device is protected AND the dialog above was confirmed - it
+                // reached this point, so it was. Previously this was set to the NEGATION of
+                // criticality, computed without reference to the dialog, and never read by anything.
+                CriticalDeviceAcknowledged = n.IsCritical, LastKnownTargets = targets };
         }).ToList();
         return true;
     }
@@ -395,7 +451,15 @@ public sealed partial class SettingsWindow : Window
     }
     private static void ConfigureAudioCombo(ComboBox combo, IReadOnlyList<AudioEndpointInfo> endpoints, string selected)
     {
-        combo.ItemsSource = endpoints; combo.DisplayMemberPath = nameof(AudioEndpointInfo.Name); combo.SelectedValuePath = nameof(AudioEndpointInfo.Id); combo.SelectedValue = selected; if (combo.SelectedIndex < 0) combo.SelectedIndex = 0;
+        var options = endpoints.ToList();
+        // A saved endpoint whose device is currently absent used to fall back to index 0 ("Do not
+        // change"), and the next save then wrote that empty id back - silently erasing the
+        // user's choice because a device happened to be unplugged. Keep it as a placeholder
+        // entry instead, so it round-trips.
+        if (!string.IsNullOrWhiteSpace(selected) && !options.Any(option => option.Id == selected))
+            options.Add(new AudioEndpointInfo { Id = selected, Name = "(saved device, not currently available)" });
+
+        combo.ItemsSource = options; combo.DisplayMemberPath = nameof(AudioEndpointInfo.Name); combo.SelectedValuePath = nameof(AudioEndpointInfo.Id); combo.SelectedValue = selected; if (combo.SelectedIndex < 0) combo.SelectedIndex = 0;
     }
     private async void SaveAudio_Click(object sender, RoutedEventArgs e)
     {
@@ -406,7 +470,11 @@ public sealed partial class SettingsWindow : Window
     private static string AudioId(ComboBox combo) => (combo.SelectedItem as AudioEndpointInfo)?.Id ?? "";
 
     private void IntegrationToggle_Toggled(object sender, RoutedEventArgs e) { IntegrationExpander.Visibility = IntegrationToggle.IsOn ? Visibility.Visible : Visibility.Collapsed; IntegrationActions.Visibility = IntegrationToggle.IsOn ? Visibility.Visible : Visibility.Collapsed; }
-    private async void SaveIntegration_Click(object sender, RoutedEventArgs e) => await SaveIntegrationAsync(true);
+    private async void SaveIntegration_Click(object sender, RoutedEventArgs e)
+    {
+        // async void with no catch reaches the global handler and shows a raw error dialog.
+        try { await SaveIntegrationAsync(true); } catch (Exception ex) { Report(IntegrationInfoBar, "Integration could not be saved", ex); }
+    }
     private async Task SaveIntegrationAsync(bool announce)
     {
         Config.Integration.Enabled = IntegrationToggle.IsOn; Config.Integration.OnWebhookUrl = OnWebhookText.Text.Trim(); Config.Integration.OffWebhookUrl = OffWebhookText.Text.Trim(); Config.Integration.BaseUrl = HaBaseUrlText.Text.Trim(); Config.Integration.EntityId = HaEntityText.Text.Trim();
@@ -423,7 +491,71 @@ public sealed partial class SettingsWindow : Window
 
     private void StartupToggle_Toggled(object sender, RoutedEventArgs e) { if (_loadingValues) return; try { _host.SetStartWithWindows(StartupToggle.IsOn); ShowInfo(SettingsInfoBar, "Startup setting updated", StartupToggle.IsOn ? "SimRigMode will launch when you sign in." : "SimRigMode will not launch automatically.", InfoBarSeverity.Success); } catch (Exception ex) { Report(SettingsInfoBar, "Startup setting failed", ex); } }
     private void HotkeysToggle_Toggled(object sender, RoutedEventArgs e) { HotkeysExpander.IsExpanded = HotkeysToggle.IsOn; }
-    private async void Delay_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args) { if (!_initialized || _loadingValues) return; ReadGeneralControls(); await _host.Configuration.SaveAsync(); }
+    private async void Delay_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (!_initialized || _loadingValues) return;
+        ReadGeneralControls();
+        // Every NumberBox tick used to write the whole config through one fixed temp path, so two
+        // overlapping saves could throw IOException into an async void. Serialise them.
+        try { await _saveGate.WaitAsync(); try { await _host.Configuration.SaveAsync(); } finally { _saveGate.Release(); } }
+        catch (Exception ex) { Report(SettingsInfoBar, "Setting could not be saved", ex); }
+    }
+
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
+
+    private async void UsbArmedToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingValues) return;
+        try
+        {
+            if (UsbArmedToggle.IsOn)
+            {
+                var rules = Config.UsbRules.Count(rule => rule.Desktop != DeviceModeAction.DoNotChange || rule.SimRig != DeviceModeAction.DoNotChange);
+                var confirmed = await ConfirmAsync("Arm USB device switching",
+                    $"Mode switches will start enabling and disabling real devices. {rules} rule(s) are currently configured.\n\n" +
+                    "Each change requires Windows administrator approval, can be refused by a driver, and may need a reboot to undo. " +
+                    "Review the USB page first if you are not sure what these rules cover.",
+                    "Arm");
+                if (!confirmed) { _loadingValues = true; UsbArmedToggle.IsOn = false; _loadingValues = false; return; }
+            }
+            Config.General.UsbSwitchingArmed = UsbArmedToggle.IsOn;
+            await _host.Configuration.SaveAsync();
+            ShowInfo(SettingsInfoBar, UsbArmedToggle.IsOn ? "USB switching armed" : "USB switching disarmed",
+                UsbArmedToggle.IsOn ? "Mode switches will now apply USB device rules." : "USB rules are kept but no device will be enabled or disabled.",
+                UsbArmedToggle.IsOn ? InfoBarSeverity.Warning : InfoBarSeverity.Success);
+        }
+        catch (Exception ex) { Report(SettingsInfoBar, "Setting could not be saved", ex); }
+    }
+
+    private async void DryRunToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingValues) return;
+        try
+        {
+            Config.General.DryRunTransitions = DryRunToggle.IsOn;
+            await _host.Configuration.SaveAsync();
+            ShowInfo(SettingsInfoBar, DryRunToggle.IsOn ? "Dry run enabled" : "Dry run disabled",
+                DryRunToggle.IsOn ? "Transitions will validate and log what they would do, and change nothing." : "Transitions will apply changes normally.",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex) { Report(SettingsInfoBar, "Setting could not be saved", ex); }
+    }
+
+    private async void PersistDisplayDefault_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!await ConfirmAsync("Set as Windows default",
+                "This writes the display layout currently on screen into Windows' own display database, so Windows restores it by itself.\n\n" +
+                "Mode switching never does this. Use it only when the current layout is one you want Windows to remember.",
+                "Set as default")) return;
+
+            var result = await Task.Run(_host.Displays.PersistCurrentTopologyAsWindowsDefault);
+            if (result == 0) ShowInfo(SettingsInfoBar, "Saved as Windows default", "Windows will restore this layout by itself.", InfoBarSeverity.Success);
+            else ShowInfo(SettingsInfoBar, "Windows refused", $"The current layout could not be saved as the default (Win32 {result}).", InfoBarSeverity.Error);
+        }
+        catch (Exception ex) { Report(SettingsInfoBar, "Could not save the default layout", ex); }
+    }
     private async void SaveGeneral_Click(object sender, RoutedEventArgs e)
     {
         try { ReadGeneralControls(); await _host.Configuration.SaveAsync(); _host.ConfigureHotkeys(); ShowInfo(SettingsInfoBar, "Settings saved", "General settings and global shortcuts are active.", InfoBarSeverity.Success); } catch (Exception ex) { Report(SettingsInfoBar, "Settings could not be saved", ex); }
@@ -449,7 +581,17 @@ public sealed partial class SettingsWindow : Window
         try
         {
             var picker = new FileOpenPicker(); picker.FileTypeFilter.Add(".json"); InitializePicker(picker); var file = await picker.PickSingleFileAsync(); if (file is null) return;
-            await _host.Configuration.ImportAsync(file.Path); _loadingValues = true; LoadConfigIntoControls(); _loadingValues = false; await RefreshUsbAsync(); await RefreshAudioAsync(); UpdateSummaries(); ShowInfo(SettingsInfoBar, "Configuration imported", "The imported workspace settings are active.", InfoBarSeverity.Success);
+            var findings = await _host.Configuration.ImportAsync(file.Path);
+            _loadingValues = true; LoadConfigIntoControls(); _loadingValues = false;
+            await RefreshUsbAsync(); await RefreshAudioAsync(); await RefreshDisplaysAsync(); UpdateSummaries();
+            // An imported file never arrives armed, and the sanitizer may have dropped or neutered
+            // rules. Say so rather than presenting the import as a clean success.
+            if (findings.Count == 0)
+                ShowInfo(SettingsInfoBar, "Configuration imported", "The imported workspace settings are active. USB switching is disarmed until you arm it.", InfoBarSeverity.Success);
+            else
+                ShowInfo(SettingsInfoBar, $"Imported with {findings.Count} change(s)",
+                    string.Join("  •  ", findings.Select(finding => finding.Detail)) + "  USB switching is disarmed until you arm it.",
+                    InfoBarSeverity.Warning);
         }
         catch (Exception ex) { Report(SettingsInfoBar, "Import failed", ex); }
     }
