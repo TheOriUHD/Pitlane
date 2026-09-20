@@ -23,9 +23,14 @@ Display captures preserve native adapter/source/target IDs, persistent monitor d
 ```powershell
 dotnet restore SimRigMode.csproj
 dotnet build SimRigMode.csproj -c Release
-dotnet run --project tests\SimRigMode.SmokeTests\SimRigMode.SmokeTests.csproj -c Release
 dotnet publish SimRigMode.csproj -c Release -r win-x64 --self-contained true -o dist
 ```
+
+> **Do not run `tests\SimRigMode.SmokeTests`.** That suite mutates the live
+> machine — it performs real `SetDisplayConfig` applies against the current
+> desktop and resolves a machine-wide USB disable batch that reaches UAC
+> elevation. It is quarantined behind an explicit opt-in and is being replaced
+> by a hardware-free xUnit suite. See `docs/report.md`.
 
 Publishing is configured for a single, untrimmed, compressed, self-contained x64 executable using Windows App SDK 2.4.0 and stable Windows Community Toolkit settings controls. WinUI 3, COM interop, and native P/Invoke metadata are retained.
 

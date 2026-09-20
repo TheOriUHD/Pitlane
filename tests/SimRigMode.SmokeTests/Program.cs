@@ -1,6 +1,34 @@
 using SimRigMode.Models;
 using SimRigMode.Services;
 
+// CONTAINMENT GATE — added 2026-09-20 during safety hardening.
+//
+// This suite mutates the live machine. It performs real SetDisplayConfig applies
+// with SDC_APPLY | SDC_SAVE_TO_DATABASE against the current desktop, and it seeds a
+// UsbRule that reaches the production elevation path. That elevation path relaunches
+// Environment.ProcessPath with "runas"; under this test host that is
+// SimRigMode.SmokeTests.exe, which re-runs this file and elevates again — the
+// unbounded UAC/process chain described in docs/report.md.
+//
+// Worse, the rule seeded below never sets InstanceId. UsbTopologyService.MatchRule
+// compares InstanceId with no emptiness guard, and the synthetic Computer and Port
+// nodes also have an empty InstanceId — so that rule matches every port in the tree
+// and ClosestRule makes it the effective policy for EVERY device on the machine.
+// The resolved batch is not empty; it is machine-wide.
+//
+// This project is scheduled for replacement by tests/SimRigMode.Tests (xUnit, fakes,
+// no hardware). Until then it refuses to run without a deliberate opt-in.
+if (Environment.GetEnvironmentVariable("SIMRIGMODE_ALLOW_HARDWARE_TESTS") != "1")
+{
+    Console.Error.WriteLine(
+        "REFUSED: SimRigMode.SmokeTests mutates the live machine (real display topology\n" +
+        "applies and a machine-wide USB disable batch that reaches UAC elevation).\n" +
+        "It is quarantined pending replacement by tests/SimRigMode.Tests.\n" +
+        "See docs/report.md. Do not set SIMRIGMODE_ALLOW_HARDWARE_TESTS=1 on a machine\n" +
+        "you care about.");
+    return 2;
+}
+
 var root = Path.Combine(Path.GetTempPath(), "SimRigMode-SmokeTests", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
