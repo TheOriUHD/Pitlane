@@ -24,13 +24,31 @@ public sealed class DisplayService
         return rebuilt;
     }
 
+    /// <summary>Bounded retries for the sizing/query race below.</summary>
+    private const int CaptureAttempts = 5;
+
     public DisplaySnapshot CaptureCurrent()
     {
-        var error = N.GetDisplayConfigBufferSizes(N.QDC_ONLY_ACTIVE_PATHS, out var pc, out var mc);
-        if (error != 0) throw new InvalidOperationException($"Display configuration sizing failed (Win32 {error}).");
-        var paths = new N.DISPLAYCONFIG_PATH_INFO[pc]; var modes = new N.DISPLAYCONFIG_MODE_INFO[mc];
-        error = N.QueryDisplayConfig(N.QDC_ONLY_ACTIVE_PATHS, ref pc, paths, ref mc, modes, IntPtr.Zero);
-        if (error != 0) throw new InvalidOperationException($"Display configuration capture failed (Win32 {error}).");
+        // GetDisplayConfigBufferSizes and QueryDisplayConfig are two separate calls. If the
+        // topology changes between them - exactly what a dock or an indirect display does when
+        // it re-enumerates - the query returns ERROR_INSUFFICIENT_BUFFER. Retry BOTH calls: a
+        // topology that grew needs new sizes, not just a larger array.
+        uint pc = 0, mc = 0;
+        N.DISPLAYCONFIG_PATH_INFO[] paths;
+        N.DISPLAYCONFIG_MODE_INFO[] modes;
+        var attempt = 0;
+        while (true)
+        {
+            attempt++;
+            var sizing = N.GetDisplayConfigBufferSizes(N.QDC_ONLY_ACTIVE_PATHS, out pc, out mc);
+            if (sizing != 0) throw new InvalidOperationException($"Display configuration sizing failed (Win32 {sizing}).");
+            paths = new N.DISPLAYCONFIG_PATH_INFO[pc];
+            modes = new N.DISPLAYCONFIG_MODE_INFO[mc];
+            var error = N.QueryDisplayConfig(N.QDC_ONLY_ACTIVE_PATHS, ref pc, paths, ref mc, modes, IntPtr.Zero);
+            if (error == 0) break;
+            if (error == N.ERROR_INSUFFICIENT_BUFFER && attempt < CaptureAttempts) continue;
+            throw new InvalidOperationException($"Display configuration capture failed (Win32 {error}) after {attempt} attempt(s).");
+        }
         var result = new DisplaySnapshot();
         foreach (var p in paths.Take((int)pc))
         {
@@ -41,15 +59,20 @@ public sealed class DisplayService
                 TargetAdapter = p.targetInfo.adapterId.Value, TargetId = p.targetInfo.id, TargetModeInfoIdx = p.targetInfo.modeInfoIdx,
                 OutputTechnology = p.targetInfo.outputTechnology, Rotation = p.targetInfo.rotation, Scaling = p.targetInfo.scaling,
                 RefreshNumerator = p.targetInfo.refreshRate.Numerator, RefreshDenominator = p.targetInfo.refreshRate.Denominator,
-                ScanLineOrdering = p.targetInfo.scanLineOrdering, TargetAvailable = p.targetInfo.targetAvailable, StatusFlags = p.flags,
+                ScanLineOrdering = p.targetInfo.scanLineOrdering, TargetAvailable = p.targetInfo.IsTargetAvailable, StatusFlags = p.flags,
                 FriendlyName = string.IsNullOrWhiteSpace(target.friendly) ? source : target.friendly, MonitorDevicePath = target.path, SourceName = source
             });
         }
         foreach (var m in modes.Take((int)mc))
         {
             var r = new DisplayModeRecord { InfoType = m.infoType, Id = m.id, Adapter = m.adapterId.Value };
-            if (m.infoType == 1) { r.Width = m.sourceMode.width; r.Height = m.sourceMode.height; r.PixelFormat = m.sourceMode.pixelFormat; r.PositionX = m.sourceMode.position.x; r.PositionY = m.sourceMode.position.y; }
-            else { r.PixelRate = m.targetMode.pixelRate; r.HSyncNumerator = m.targetMode.hSyncFreq.Numerator; r.HSyncDenominator = m.targetMode.hSyncFreq.Denominator; r.VSyncNumerator = m.targetMode.vSyncFreq.Numerator; r.VSyncDenominator = m.targetMode.vSyncFreq.Denominator; r.ActiveWidth = m.targetMode.activeSize.cx; r.ActiveHeight = m.targetMode.activeSize.cy; r.TotalWidth = m.targetMode.totalSize.cx; r.TotalHeight = m.targetMode.totalSize.cy; r.VideoStandard = m.targetMode.videoStandard; r.ScanLineOrdering = m.targetMode.scanLineOrdering; }
+            if (m.infoType == N.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE) { r.Width = m.sourceMode.width; r.Height = m.sourceMode.height; r.PixelFormat = m.sourceMode.pixelFormat; r.PositionX = m.sourceMode.position.x; r.PositionY = m.sourceMode.position.y; }
+            else if (m.infoType == N.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET) { r.PixelRate = m.targetMode.pixelRate; r.HSyncNumerator = m.targetMode.hSyncFreq.Numerator; r.HSyncDenominator = m.targetMode.hSyncFreq.Denominator; r.VSyncNumerator = m.targetMode.vSyncFreq.Numerator; r.VSyncDenominator = m.targetMode.vSyncFreq.Denominator; r.ActiveWidth = m.targetMode.activeSize.cx; r.ActiveHeight = m.targetMode.activeSize.cy; r.TotalWidth = m.targetMode.totalSize.cx; r.TotalHeight = m.targetMode.totalSize.cy; r.VideoStandard = m.targetMode.videoStandard; r.ScanLineOrdering = m.targetMode.scanLineOrdering; }
+            // DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE (3) carries neither a source mode nor
+            // target timings. The previous code had no third branch and reinterpreted its 40
+            // bytes of rectangle data as target timings. Record the type and leave the payload
+            // empty instead. Unreachable today because we never query virtual-mode-aware, but it
+            // arms itself the moment anyone adds that flag.
             result.Modes.Add(r);
         }
         return result;
@@ -58,11 +81,16 @@ public sealed class DisplayService
     public void Apply(DisplaySnapshot snapshot)
     {
         if (snapshot.Paths.Count == 0) throw new InvalidOperationException("This mode has no captured display layout.");
+        ValidateModeIndices(snapshot);
         var paths = snapshot.Paths.Select(p => new N.DISPLAYCONFIG_PATH_INFO
         {
             sourceInfo = new() { adapterId = N.LUID.From(p.SourceAdapter), id = p.SourceId, modeInfoIdx = p.SourceModeInfoIdx },
-            targetInfo = new() { adapterId = N.LUID.From(p.TargetAdapter), id = p.TargetId, modeInfoIdx = p.TargetModeInfoIdx, outputTechnology = p.OutputTechnology, rotation = p.Rotation, scaling = p.Scaling, refreshRate = new() { Numerator = p.RefreshNumerator, Denominator = p.RefreshDenominator }, scanLineOrdering = p.ScanLineOrdering, targetAvailable = p.TargetAvailable },
-            flags = p.StatusFlags
+            // targetAvailable is output-only and is deliberately submitted as 0.
+            targetInfo = new() { adapterId = N.LUID.From(p.TargetAdapter), id = p.TargetId, modeInfoIdx = p.TargetModeInfoIdx, outputTechnology = p.OutputTechnology, rotation = p.Rotation, scaling = p.Scaling, refreshRate = new() { Numerator = p.RefreshNumerator, Denominator = p.RefreshDenominator }, scanLineOrdering = p.ScanLineOrdering },
+            // Mask rather than replay. A captured DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE bit
+            // submitted without SDC_VIRTUAL_MODE_AWARE makes Windows read modeInfoIdx under the
+            // packed-bitfield convention, i.e. as garbage indices.
+            flags = p.StatusFlags & N.SUBMITTABLE_PATH_FLAGS
         }).ToArray();
         var modes = snapshot.Modes.Select(m =>
         {
@@ -73,6 +101,29 @@ public sealed class DisplayService
         }).ToArray();
         var error = N.SetDisplayConfig((uint)paths.Length, paths, (uint)modes.Length, modes, N.SDC_USE_SUPPLIED_DISPLAY_CONFIG | N.SDC_APPLY | N.SDC_SAVE_TO_DATABASE | N.SDC_ALLOW_CHANGES);
         if (error != 0) throw new InvalidOperationException($"Windows rejected the captured display layout (Win32 {error}). A display may be missing or unavailable.");
+    }
+
+    /// <summary>
+    /// A saved snapshot can disagree with its own mode array - a hand-edited config, a partial
+    /// write, or a profile whose modes were trimmed. Submitting an out-of-range index is a
+    /// native buffer read, so refuse before the array ever reaches SetDisplayConfig.
+    /// </summary>
+    private static void ValidateModeIndices(DisplaySnapshot snapshot)
+    {
+        foreach (var path in snapshot.Paths)
+        {
+            Check(path.SourceModeInfoIdx, "source");
+            Check(path.TargetModeInfoIdx, "target");
+        }
+
+        void Check(uint index, string which)
+        {
+            if (index == N.DISPLAYCONFIG_PATH_MODE_IDX_INVALID) return;
+            if (index >= snapshot.Modes.Count)
+                throw new InvalidOperationException(
+                    $"The captured display layout is inconsistent: a path references {which} mode {index}, " +
+                    $"but the layout only holds {snapshot.Modes.Count} mode(s). Re-capture this mode's layout.");
+        }
     }
 
     private static uint ImportMode(DisplaySnapshot source, uint index, DisplaySnapshot destination)
