@@ -89,7 +89,13 @@ public sealed class DisplayService
         return result;
     }
 
-    public void Apply(DisplaySnapshot snapshot)
+    /// <summary>
+    /// Submits a topology and returns the raw Win32 result. The flags are supplied by the
+    /// caller, which is what lets DisplayApplyEngine validate before it applies and roll back
+    /// afterwards. Note there is no overload that defaults to SDC_SAVE_TO_DATABASE: persisting
+    /// is a deliberate, separate user action now. See docs/report.md.
+    /// </summary>
+    public int Submit(DisplaySnapshot snapshot, uint sdcFlags)
     {
         if (snapshot.Paths.Count == 0) throw new InvalidOperationException("This mode has no captured display layout.");
         ValidateModeIndices(snapshot);
@@ -110,8 +116,7 @@ public sealed class DisplayService
             else n.targetMode = new() { pixelRate = m.PixelRate, hSyncFreq = new() { Numerator = m.HSyncNumerator, Denominator = m.HSyncDenominator }, vSyncFreq = new() { Numerator = m.VSyncNumerator, Denominator = m.VSyncDenominator }, activeSize = new() { cx = m.ActiveWidth, cy = m.ActiveHeight }, totalSize = new() { cx = m.TotalWidth, cy = m.TotalHeight }, videoStandard = m.VideoStandard, scanLineOrdering = m.ScanLineOrdering };
             return n;
         }).ToArray();
-        var error = N.SetDisplayConfig((uint)paths.Length, paths, (uint)modes.Length, modes, N.SDC_USE_SUPPLIED_DISPLAY_CONFIG | N.SDC_APPLY | N.SDC_SAVE_TO_DATABASE | N.SDC_ALLOW_CHANGES);
-        if (error != 0) throw new InvalidOperationException($"Windows rejected the captured display layout (Win32 {error}). A display may be missing or unavailable.");
+        return N.SetDisplayConfig((uint)paths.Length, paths, (uint)modes.Length, modes, sdcFlags);
     }
 
     /// <summary>
@@ -188,9 +193,10 @@ public sealed class DisplayService
         ActiveWidth = mode.ActiveWidth, ActiveHeight = mode.ActiveHeight, TotalWidth = mode.TotalWidth,
         TotalHeight = mode.TotalHeight, VideoStandard = mode.VideoStandard, ScanLineOrdering = mode.ScanLineOrdering
     };
+    // Single definition, shared with the builder, the verifier and the settings window. This
+    // comparison previously existed in three separate copies.
     private static bool SameDisplay(DisplayPathRecord left, DisplayPathRecord right) =>
-        (!string.IsNullOrWhiteSpace(left.MonitorDevicePath) && left.MonitorDevicePath.Equals(right.MonitorDevicePath, StringComparison.OrdinalIgnoreCase)) ||
-        left.TargetAdapter == right.TargetAdapter && left.TargetId == right.TargetId;
+        DisplayIdentityMatcher.SameDisplay(left, right);
 
     private readonly record struct TargetName(string friendly, string path, ushort edidManufactureId,
         ushort edidProductCodeId, uint connectorInstance, bool edidIdsValid);

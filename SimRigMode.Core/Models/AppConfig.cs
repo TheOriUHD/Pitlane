@@ -31,6 +31,29 @@ public sealed class GeneralConfig
     public string DesktopHotkey { get; set; } = "Ctrl+Alt+D";
     public string SimRigHotkey { get; set; } = "Ctrl+Alt+R";
     public bool HotkeysEnabled { get; set; }
+
+    // ---- display pipeline ------------------------------------------------------------
+    public int DisplaySettleMilliseconds { get; set; } = 750;
+
+    /// <summary>Longer, because an indirect display stack has more work to do after a topology
+    /// change than a GPU output does.</summary>
+    public int IndirectDisplaySettleMilliseconds { get; set; } = 3000;
+
+    public int DisplayVerifyRetries { get; set; } = 5;
+
+    /// <summary>
+    /// When true, transitions validate everything and report what they WOULD do without calling
+    /// a single mutating API. Useful for confirming a profile is sane before trusting it.
+    /// </summary>
+    public bool DryRunTransitions { get; set; }
+
+    // ---- USB posture -----------------------------------------------------------------
+
+    /// <summary>
+    /// USB switching ships disarmed. Rules are preserved and shown, but no device is enabled or
+    /// disabled until the user explicitly arms the feature.
+    /// </summary>
+    public bool UsbSwitchingArmed { get; set; }
 }
 
 public sealed class IntegrationConfig
