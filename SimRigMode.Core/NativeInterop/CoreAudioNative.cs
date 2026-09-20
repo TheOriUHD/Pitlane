@@ -13,11 +13,34 @@ internal static class CoreAudioNative
     internal static readonly PROPERTYKEY PKEY_Device_FriendlyName = new() { fmtid = new("A45C254E-DF1C-4EFD-8020-67D146A850E0"), pid = 14 };
 
     [StructLayout(LayoutKind.Sequential)] internal struct PROPERTYKEY { public Guid fmtid; public uint pid; }
-    [StructLayout(LayoutKind.Explicit)] internal struct PROPVARIANT
+    internal const ushort VT_LPWSTR = 31;
+
+    /// <summary>
+    /// PROPVARIANT is 24 bytes on x64: an 8-byte header (vt plus three reserved WORDs, padded)
+    /// followed by a 16-byte union, whose largest arm is a counted array
+    /// { ULONG cElems; void* pElems; }.
+    ///
+    /// Size was previously unset. With fields at offsets 0 and 8 the runtime computed
+    /// sizeof == 16, so every IPropertyStore::GetValue overran the marshalled buffer by 8 bytes,
+    /// on every endpoint, on every enumeration. It "worked" because the overrun usually landed
+    /// in stack padding.
+    ///
+    /// This project publishes win-x64 only (see RuntimeIdentifier in SimRigMode.csproj); the
+    /// value would be 16 on x86. A test asserts the size.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 24)] internal struct PROPVARIANT
     {
         [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr pointerValue;
-        public readonly string GetString() => vt == 31 && pointerValue != IntPtr.Zero ? Marshal.PtrToStringUni(pointerValue) ?? "" : "";
+        public readonly string GetString() => vt == VT_LPWSTR && pointerValue != IntPtr.Zero ? Marshal.PtrToStringUni(pointerValue) ?? "" : "";
     }
+
+    /// <summary>
+    /// Frees whatever a PROPVARIANT owns. Never called before, so every VT_LPWSTR friendly name
+    /// leaked once per endpoint per enumeration - and enumeration uses DEVICE_STATE_ALL, so that
+    /// is every render and capture endpoint in every state, on every settings refresh.
+    /// </summary>
+    [DllImport("ole32.dll")]
+    internal static extern int PropVariantClear(ref PROPVARIANT value);
 
     [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     internal interface IMMDeviceEnumerator

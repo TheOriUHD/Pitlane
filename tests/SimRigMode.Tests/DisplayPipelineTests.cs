@@ -80,6 +80,30 @@ public sealed class DisplayPipelineTests
         Assert.DoesNotContain(applied.Paths, p => p.MonitorDevicePath == TopologyFixture.PrompterMonitorPath);
     }
 
+    [Fact]
+    public async Task AProfileThatCapturedThePrompterAsAManagedDisplay_StillCarriesItThrough()
+    {
+        // The real Desktop profile from the incident holds the Prompter as an ordinary managed
+        // path, because indirect displays were not understood when it was captured. Switching to
+        // Desktop must NOT actively re-add it. Carry-through is driven by the LIVE classification,
+        // so it does not depend on migrating old config.
+        var live = TopologyFixture.Empty().WithDeskMonitor().WithPrompter(x: -1024);
+        var profile = TopologyFixture.Empty().WithDeskMonitor().WithPrompter(x: -1024);
+        // Simulate an old profile: captured before classification existed.
+        foreach (var path in profile.Paths) { path.IsIndirect = false; path.AdapterDevicePath = ""; }
+
+        var gateway = new FakeDisplayConfigGateway(live);
+        var outcome = await Engine(gateway).ApplyAsync(profile, Options());
+
+        Assert.Equal(DisplayApplyStatus.Committed, outcome.Status);
+        var applied = gateway.Submitted[gateway.SubmittedFlags.FindIndex(f => (f & N.SDC_APPLY) != 0)];
+        var prompter = applied.Paths.Single(p => p.MonitorDevicePath == TopologyFixture.PrompterMonitorPath);
+
+        // Present, and carrying its live state rather than the profile's stale copy.
+        Assert.True(prompter.IsIndirect);
+        Assert.Contains(outcome.Log, line => line.Contains("carried through"));
+    }
+
     // ===== persistence ==============================================================
 
     [Fact]

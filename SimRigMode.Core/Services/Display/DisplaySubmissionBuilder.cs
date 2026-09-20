@@ -61,6 +61,20 @@ public static class DisplaySubmissionBuilder
             matchedLive.Add(match.Live);
             notes.Add($"{saved.FriendlyName}: {match.Detail}");
 
+            // An indirect display the user has not opted into managing is carried through with
+            // its LIVE state, even when the saved profile captured it as a managed display.
+            // This matters for profiles captured before indirect displays were understood: the
+            // incident's Desktop profile holds the DisplayLink Prompter as an ordinary path, and
+            // without this branch switching to Desktop would actively re-add it.
+            if (match.Live.IsIndirect && !match.Live.IndirectOptIn)
+            {
+                var carriedMatch = ClonePath(match.Live);
+                AddPath(liveActive, match.Live, carriedMatch, submission, preferSavedTimings: true);
+                expected.Add(carriedMatch);
+                notes.Add($"{match.Live.FriendlyName}: carried through unchanged; this mode's saved layout for it is ignored");
+                continue;
+            }
+
             var path = Rebind(saved, match.Live);
             AddPath(profile, saved, path, submission, preferSavedTimings: !match.Live.IsIndirect);
             expected.Add(path);

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.IO;
 using SimRigMode.Models;
+using SimRigMode.Services.Usb;
 
 namespace SimRigMode.Services;
 
@@ -20,6 +21,9 @@ public sealed class ConfigurationService
         {
             if (File.Exists(ConfigPath)) Current = JsonSerializer.Deserialize<AppConfig>(await File.ReadAllTextAsync(ConfigPath), JsonOptions) ?? new();
             Migrate(Current);
+            // The on-disk config is user-editable, so it gets the same treatment as an import.
+            foreach (var finding in UsbRuleSanitizer.Sanitize(Current))
+                _log.Warning("Configuration: " + finding);
         }
         catch (Exception ex)
         {
@@ -38,10 +42,27 @@ public sealed class ConfigurationService
     }
 
     public async Task ExportAsync(string path) => await File.WriteAllTextAsync(path, JsonSerializer.Serialize(Current, JsonOptions));
-    public async Task ImportAsync(string path)
+    /// <summary>
+    /// Imports a configuration. The file is sanitized BEFORE it becomes the live config and
+    /// before anything is written to disk: an imported file previously installed arbitrary USB
+    /// rules, including hub-self-disable, with no validation and no confirmation.
+    /// </summary>
+    /// <returns>What the sanitizer changed, for the caller to show the user.</returns>
+    public async Task<IReadOnlyList<SanitizerFinding>> ImportAsync(string path)
     {
-        var loaded = JsonSerializer.Deserialize<AppConfig>(await File.ReadAllTextAsync(path), JsonOptions) ?? throw new InvalidDataException("The file does not contain a valid configuration.");
-        Migrate(loaded); Current = loaded; await SaveAsync();
+        var loaded = JsonSerializer.Deserialize<AppConfig>(await File.ReadAllTextAsync(path), JsonOptions)
+            ?? throw new InvalidDataException("The file does not contain a valid configuration.");
+        Migrate(loaded);
+        var findings = UsbRuleSanitizer.Sanitize(loaded);
+        foreach (var finding in findings) _log.Warning("Import: " + finding);
+
+        // An imported config never arrives armed. Whatever machine it came from, the user has to
+        // look at the rules here and arm it deliberately.
+        loaded.General.UsbSwitchingArmed = false;
+
+        Current = loaded;
+        await SaveAsync();
+        return findings;
     }
     public async Task ResetAsync() { Current = new(); await SaveAsync(); }
     private static void Migrate(AppConfig config)

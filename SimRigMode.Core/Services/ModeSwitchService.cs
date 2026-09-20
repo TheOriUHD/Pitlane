@@ -60,7 +60,17 @@ public sealed class ModeSwitchService
 
     private async Task ApplyUsbAsync(WorkspaceMode target, DeviceModeAction requested, CancellationToken token)
     {
-        if (!_config.Current.UsbRules.Any(rule => (target == WorkspaceMode.Desktop ? rule.Desktop : rule.SimRig) == requested)) return;
+        var matching = _config.Current.UsbRules.Count(rule => (target == WorkspaceMode.Desktop ? rule.Desktop : rule.SimRig) == requested);
+        if (matching == 0) return;
+
+        // USB switching ships disarmed. Rules are kept and shown, but nothing is enabled or
+        // disabled until the user arms the feature deliberately, having seen what it would do.
+        if (!_config.Current.General.UsbSwitchingArmed)
+        {
+            _log.Warning($"USB switching is disarmed: {matching} {requested} rule(s) were not applied. Arm it in Settings to enable device switching.");
+            return;
+        }
+
         var topology = new UsbTopologyService(_usb);
         var operations = topology.ResolveOperations(_config.Current.UsbRules, target, requested);
         _log.Info($"USB {requested} policy resolved to {operations.Count} physical device operation(s)");
