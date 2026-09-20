@@ -52,6 +52,7 @@ public sealed class UsbTopologyService
         }
 
         PromoteUsefulInterfaceNames(computer);
+        PropagateCriticality(computer);
         Sort(computer); return new UsbTopology { Roots = [computer] };
     }
 
@@ -92,12 +93,49 @@ public sealed class UsbTopologyService
         return operations.Values.ToList();
     }
 
-    public static UsbRule? MatchRule(IEnumerable<UsbRule> rules, UsbTopologyNode node) => rules.FirstOrDefault(rule =>
-        !string.IsNullOrWhiteSpace(rule.IdentityKey) && rule.IdentityKey.Equals(node.IdentityKey, StringComparison.OrdinalIgnoreCase) ||
-        !string.IsNullOrWhiteSpace(rule.ContainerId) && rule.ContainerId.Equals(node.ContainerId, StringComparison.OrdinalIgnoreCase) ||
-        !string.IsNullOrWhiteSpace(rule.Serial) && rule.Serial.Equals(node.Serial, StringComparison.OrdinalIgnoreCase) && rule.Vid == node.Vid && rule.Pid == node.Pid ||
-        !string.IsNullOrWhiteSpace(rule.LocationPath) && rule.LocationPath.Equals(node.LocationPath, StringComparison.OrdinalIgnoreCase) && rule.Vid == node.Vid && rule.Pid == node.Pid ||
-        rule.InstanceId.Equals(node.InstanceId, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// Post-order propagation of criticality up the built tree. This deliberately walks the
+    /// Interfaces group too, since a composite keyboard's class-"Keyboard" node is attached
+    /// there rather than to the physical device node.
+    /// </summary>
+    private static void PropagateCriticality(UsbTopologyNode node)
+    {
+        var names = new List<string>();
+        foreach (var child in node.Children)
+        {
+            PropagateCriticality(child);
+            if (child.IsSelfCritical) names.Add(child.Name);
+            names.AddRange(child.CriticalDescendantNames);
+        }
+        node.CriticalDescendantNames = names.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // OR rather than assign: the flat devnode pass in UsbDeviceService may already have
+        // found something this tree does not represent, and that must not be cleared here.
+        node.HasCriticalDescendant |= names.Count > 0;
+    }
+
+    /// <summary>
+    /// Matches a rule to a node. Two guards matter here and both were missing:
+    /// the rule must be addressable, and the node must be a real device rather than one of the
+    /// synthetic structural nodes (Computer, Port, Interfaces) that carry no InstanceId.
+    /// Without them an unaddressable rule matched every Port in the tree, and
+    /// <see cref="ClosestRule"/> then made it the effective policy for the whole machine.
+    /// </summary>
+    public static UsbRule? MatchRule(IEnumerable<UsbRule> rules, UsbTopologyNode node)
+    {
+        if (!IsAddressableNode(node)) return null;
+        return rules.FirstOrDefault(rule => rule.IsAddressable && (
+            !string.IsNullOrWhiteSpace(rule.IdentityKey) && rule.IdentityKey.Equals(node.IdentityKey, StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrWhiteSpace(rule.ContainerId) && rule.ContainerId.Equals(node.ContainerId, StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrWhiteSpace(rule.Serial) && rule.Serial.Equals(node.Serial, StringComparison.OrdinalIgnoreCase) && rule.Vid == node.Vid && rule.Pid == node.Pid ||
+            !string.IsNullOrWhiteSpace(rule.LocationPath) && rule.LocationPath.Equals(node.LocationPath, StringComparison.OrdinalIgnoreCase) && rule.Vid == node.Vid && rule.Pid == node.Pid ||
+            !string.IsNullOrWhiteSpace(rule.InstanceId) && rule.InstanceId.Equals(node.InstanceId, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>Structural nodes carry no device identity and must never be the target of a rule.</summary>
+    private static bool IsAddressableNode(UsbTopologyNode node) =>
+        node.Kind is UsbTopologyNodeKind.Hub or UsbTopologyNodeKind.RootHub
+                  or UsbTopologyNodeKind.HostController or UsbTopologyNodeKind.Device
+                  or UsbTopologyNodeKind.Missing;
 
     private static UsbRule? ClosestRule(IReadOnlyList<UsbRule> rules, UsbTopologyNode node)
     {
@@ -140,7 +178,7 @@ public sealed class UsbTopologyService
         var chain = string.Join('.', Regex.Matches(item.LocationPath, @"USB\((\d+)\)").Select(match => match.Groups[1].Value));
         var port = int.TryParse(chain.Split('.').LastOrDefault(), out var number) ? number : ParsePort(item.LocationInfo);
         var name = BetterName(item);
-        return new() { Kind = item.IsHostController ? UsbTopologyNodeKind.HostController : item.IsRootHub ? UsbTopologyNodeKind.RootHub : item.IsHub ? UsbTopologyNodeKind.Hub : UsbTopologyNodeKind.Device, IdentityKey = Identity(item), Name = name, Manufacturer = item.Manufacturer, InstanceId = item.InstanceId, ContainerId = item.ContainerId, Vid = item.Vid, Pid = item.Pid, Serial = item.Serial, DeviceClass = item.DeviceClass, LocationPath = item.LocationPath, PortChain = chain, PortNumber = port, IsEnabled = item.IsEnabled, IsPresent = item.IsPresent, IsCritical = item.IsCritical };
+        return new() { Kind = item.IsHostController ? UsbTopologyNodeKind.HostController : item.IsRootHub ? UsbTopologyNodeKind.RootHub : item.IsHub ? UsbTopologyNodeKind.Hub : UsbTopologyNodeKind.Device, IdentityKey = Identity(item), Name = name, Manufacturer = item.Manufacturer, InstanceId = item.InstanceId, ContainerId = item.ContainerId, Vid = item.Vid, Pid = item.Pid, Serial = item.Serial, DeviceClass = item.DeviceClass, LocationPath = item.LocationPath, PortChain = chain, PortNumber = port, IsEnabled = item.IsEnabled, IsPresent = item.IsPresent, IsSelfCritical = item.IsSelfCritical, HasCriticalDescendant = item.HasCriticalDescendant };
     }
     private static string BetterName(UsbDeviceInfo item) => item.IsHostController && !string.IsNullOrWhiteSpace(item.FriendlyName) ? item.FriendlyName : !string.IsNullOrWhiteSpace(item.ProductName) ? item.ProductName : !string.IsNullOrWhiteSpace(item.FriendlyName) ? item.FriendlyName : string.IsNullOrWhiteSpace(item.VidPid) ? "USB device" : $"USB device {item.VidPid}";
     private static void PromoteUsefulInterfaceNames(UsbTopologyNode node)

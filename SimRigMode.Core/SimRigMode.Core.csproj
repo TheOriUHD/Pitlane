@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Hardware-facing logic, extracted from the WinUI application so that it can be referenced by
+    a test project without dragging in the WinUI runtime OR the production apphost.
+
+    This is a class library on purpose. A library produces no apphost, so referencing it can
+    never place a runnable SimRigMode.exe into a test output folder - the condition that let the
+    old smoke-test suite elevate the wrong binary. See docs/report.md and tests/Directory.Build.props.
+
+    Do NOT add UseWinUI, OutputType, RuntimeIdentifier or SelfContained here.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>SimRigMode.Core</AssemblyName>
+    <RootNamespace>SimRigMode</RootNamespace>
+    <IsPublishable>false</IsPublishable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="8.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SimRigMode.Tests" />
+  </ItemGroup>
+
+</Project>

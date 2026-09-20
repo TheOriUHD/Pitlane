@@ -24,10 +24,18 @@
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="tests\**\*.cs" /><Compile Remove="tools\**\*.cs" />
-    <Content Remove="tests\**;tools\**;artifacts\**;dist\**" />
-    <None Remove="tests\**;tools\**;artifacts\**;dist\**" />
-    <EmbeddedResource Remove="tests\**;tools\**;artifacts\**;dist\**" />
+    <!-- This project sits at the repo root, so the SDK default globs would otherwise swallow
+         every nested project's sources AND their build output. Page/ApplicationDefinition/
+         PRIResource are removed too: without them, any .xaml ever added under tests\ or tools\
+         would be XAML-compiled into the production app. -->
+    <Compile Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
+    <Content Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
+    <None Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
+    <EmbeddedResource Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
+    <Page Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
+    <ApplicationDefinition Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
+    <PRIResource Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
+    <ProjectReference Include="SimRigMode.Core\SimRigMode.Core.csproj" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="8.0.0" />

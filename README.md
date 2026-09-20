@@ -23,20 +23,36 @@ Display captures preserve native adapter/source/target IDs, persistent monitor d
 ```powershell
 dotnet restore SimRigMode.csproj
 dotnet build SimRigMode.csproj -c Release
+dotnet test tests\SimRigMode.Tests\SimRigMode.Tests.csproj -c Release
 dotnet publish SimRigMode.csproj -c Release -r win-x64 --self-contained true -o dist
 ```
 
-> **Do not run `tests\SimRigMode.SmokeTests`.** That suite mutates the live
-> machine — it performs real `SetDisplayConfig` applies against the current
-> desktop and resolves a machine-wide USB disable batch that reaches UAC
-> elevation. It is quarantined behind an explicit opt-in and is being replaced
-> by a hardware-free xUnit suite. See `docs/report.md`.
+### Layout
+
+| Project | Kind | Purpose |
+|---|---|---|
+| `SimRigMode.csproj` | WinUI 3 `WinExe` | Tray app, settings window, composition root |
+| `SimRigMode.Core` | class library | Models, native interop, hardware-facing services |
+| `tests/SimRigMode.Tests` | xUnit | Hardware-free tests; references **Core only** |
+
+`SimRigMode.Core` is a class library deliberately. A library emits no apphost, so
+referencing it can never place a runnable `SimRigMode.exe` into a test output folder.
+The previous smoke-test project did exactly that, and reached the production `runas`
+elevation path through `Environment.ProcessPath`; see `docs/report.md`.
+`tests/Directory.Build.props` sets `UseAppHost=false` for everything under `tests/`
+and **fails the build** if a runnable binary ever reappears there.
+
+Tests must never touch real hardware. Nothing under `tests/` may call `SetDisplayConfig`,
+`CM_Enable_DevNode`/`CM_Disable_DevNode`, `IPolicyConfig`, or trigger elevation.
 
 Publishing is configured for a single, untrimmed, compressed, self-contained x64 executable using Windows App SDK 2.4.0 and stable Windows Community Toolkit settings controls. WinUI 3, COM interop, and native P/Invoke metadata are retained.
 
 ## Safety and limitations
 
-- Keyboard, mouse, system-class, USB host-controller, and root-hub rules require an explicit strong-warning acknowledgement.
+- Keyboard, mouse, system-class, USB host-controller, and root-hub devices are protected, and
+  protection now propagates upward: a USB composite device with a keyboard or mouse behind it
+  is treated as protected even though its own device class is plain `USB`.
+- A rule that carries no usable device identity matches nothing at all.
 - USB device enable/disable may be refused by Windows, may require a reboot, or may be cancelled at UAC. The remaining safe transition steps continue.
 - Audio default switching uses Windows' undocumented `IPolicyConfig` COM surface behind `AudioService`; failures are isolated and reported.
 - A captured display layout needs the relevant GPU outputs/displays to be available. A missing device produces a visible warning without terminating the tray application.

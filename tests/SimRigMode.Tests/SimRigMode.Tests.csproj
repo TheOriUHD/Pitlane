@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>SimRigMode.Tests</AssemblyName>
+    <RootNamespace>SimRigMode.Tests</RootNamespace>
+    <!-- UseAppHost/SelfContained/IsPublishable come from tests/Directory.Build.props. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Core only. Referencing the WinUI app would copy the production apphost into this
+         output folder, which tests/Directory.Build.props fails the build over. -->
+    <ProjectReference Include="..\..\SimRigMode.Core\SimRigMode.Core.csproj" />
+  </ItemGroup>
+
+</Project>

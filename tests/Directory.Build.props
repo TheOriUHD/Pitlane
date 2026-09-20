@@ -1,0 +1,36 @@
+<Project>
+
+  <!--
+    Repo-wide safety defaults for everything under tests/.
+
+    Context: the previous smoke-test project was an Exe with SelfContained=true and a
+    ProjectReference to the WinExe app. That combination produced TWO runnable binaries in
+    the test output - SimRigMode.SmokeTests.exe and a copy of the production SimRigMode.exe -
+    and the suite reached the production runas elevation path via Environment.ProcessPath.
+    See docs/report.md.
+
+    These properties apply automatically to every present and future project under tests/.
+  -->
+  <PropertyGroup>
+    <!-- No apphost means no double-clickable binary can exist in a test output folder,
+         and Environment.ProcessPath resolves to testhost.exe rather than anything
+         resembling the production app. -->
+    <UseAppHost>false</UseAppHost>
+    <SelfContained>false</SelfContained>
+    <IsPublishable>false</IsPublishable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    Tripwire. If a future edit ever reintroduces an apphost under tests/, or drags the
+    production apphost into a test output folder, the build fails rather than quietly
+    recreating the hazard.
+  -->
+  <Target Name="FailIfRunnableBinaryInTestOutput" AfterTargets="Build">
+    <Error Condition="Exists('$(OutDir)SimRigMode.exe')"
+           Text="A project under tests/ must never copy the production apphost. Found '$(OutDir)SimRigMode.exe'. This is the condition that allowed the elevation recursion described in docs/report.md." />
+    <Error Condition="'$(AssemblyName)' != '' And Exists('$(OutDir)$(AssemblyName).exe')"
+           Text="A project under tests/ must not produce a runnable apphost. Found '$(OutDir)$(AssemblyName).exe'. Keep UseAppHost=false." />
+  </Target>
+
+</Project>

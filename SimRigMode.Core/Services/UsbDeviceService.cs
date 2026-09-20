@@ -32,11 +32,40 @@ public sealed class UsbDeviceService
                 var (vid, pid) = ParseVidPidParts(id); var location = FirstMultiString(GetProperty(set, ref data, N.SPDRP_LOCATION_PATHS));
                 var parentId = ""; if (N.CM_Get_Parent(out var parent, data.DevInst, 0) == 0) parentId = GetDeviceId(parent);
                 var rootHub = id.Contains("ROOT_HUB", StringComparison.OrdinalIgnoreCase); var hub = rootHub || service.Contains("USBHUB", StringComparison.OrdinalIgnoreCase) || name.Contains("USB Hub", StringComparison.OrdinalIgnoreCase);
-                result.Add(new() { DevInst = data.DevInst, InstanceId = id, ParentInstanceId = parentId, FriendlyName = name, ProductName = string.IsNullOrWhiteSpace(busName) ? name : busName, Manufacturer = GetProperty(set, ref data, N.SPDRP_MFG), DeviceClass = cls, Service = service, DriverKey = GetProperty(set, ref data, N.SPDRP_DRIVER), LocationInfo = GetProperty(set, ref data, N.SPDRP_LOCATION_INFORMATION), LocationPath = location, ContainerId = GetDevicePropertyGuid(set, ref data, new(new Guid("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c"), 2)), Vid = vid, Pid = pid, VidPid = ParseVidPid(id), Serial = ParseSerial(id), IsEnabled = (status & N.DN_STARTED) != 0, IsPresent = (status & N.DN_PRESENT) != 0, IsHub = hub, IsRootHub = rootHub, IsHostController = hostController, IsComposite = service.Equals("usbccgp", StringComparison.OrdinalIgnoreCase), IsCritical = IsCritical(name, cls, id) || hostController || rootHub });
+                result.Add(new() { DevInst = data.DevInst, InstanceId = id, ParentInstanceId = parentId, FriendlyName = name, ProductName = string.IsNullOrWhiteSpace(busName) ? name : busName, Manufacturer = GetProperty(set, ref data, N.SPDRP_MFG), DeviceClass = cls, Service = service, DriverKey = GetProperty(set, ref data, N.SPDRP_DRIVER), LocationInfo = GetProperty(set, ref data, N.SPDRP_LOCATION_INFORMATION), LocationPath = location, ContainerId = GetDevicePropertyGuid(set, ref data, new(new Guid("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c"), 2)), Vid = vid, Pid = pid, VidPid = ParseVidPid(id), Serial = ParseSerial(id), IsEnabled = (status & N.DN_STARTED) != 0, IsPresent = (status & N.DN_PRESENT) != 0, IsHub = hub, IsRootHub = rootHub, IsHostController = hostController, IsComposite = service.Equals("usbccgp", StringComparison.OrdinalIgnoreCase), IsSelfCritical = IsCritical(name, cls, id) || hostController || rootHub });
             }
         }
         finally { N.SetupDiDestroyDeviceInfoList(set); }
+        PropagateCriticality(result);
         return result.OrderBy(d => d.FriendlyName).ToList();
+    }
+
+    /// <summary>
+    /// Criticality must flow upward through the devnode parent chain. A USB composite keyboard
+    /// exposes its physical devnode with class "USB"; only the HID child underneath it carries
+    /// class "Keyboard", and the topology builder filters interface nodes out of the physical
+    /// tree. Without this pass the physical node looks harmless and the resolver will disable
+    /// it, taking system input with it.
+    ///
+    /// This walks only what <see cref="Enumerate"/> collected (USB, HID and host controllers),
+    /// so non-input subtrees such as USBSTOR storage are not covered here. The elevated-side
+    /// validator performs the exhaustive cfgmgr32 subtree walk.
+    /// </summary>
+    private static void PropagateCriticality(List<UsbDeviceInfo> inventory)
+    {
+        var byId = new Dictionary<string, UsbDeviceInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in inventory) byId[item.InstanceId] = item;
+        foreach (var item in inventory.Where(entry => entry.IsSelfCritical))
+        {
+            // The visited set guards against a malformed parent chain looping forever.
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var parentId = item.ParentInstanceId;
+            while (!string.IsNullOrWhiteSpace(parentId) && visited.Add(parentId) && byId.TryGetValue(parentId, out var parent))
+            {
+                parent.HasCriticalDescendant = true;
+                parentId = parent.ParentInstanceId;
+            }
+        }
     }
 
     public static int PerformLocalOperation(string instanceId, bool enable)

@@ -60,6 +60,19 @@ public sealed class UsbRule
     public DeviceModeAction Desktop { get; set; }
     public DeviceModeAction SimRig { get; set; }
     public bool CriticalDeviceAcknowledged { get; set; }
+
+    /// <summary>
+    /// A rule is addressable only when it carries at least one identity field that can name a
+    /// real device. A rule with every identity field empty must match nothing at all: before
+    /// this guard, an empty <see cref="InstanceId"/> compared equal to the empty InstanceId of
+    /// the synthetic Computer and Port nodes, so such a rule became the effective policy for
+    /// every device on the machine. See docs/report.md.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsAddressable =>
+        !string.IsNullOrWhiteSpace(IdentityKey) || !string.IsNullOrWhiteSpace(ContainerId) ||
+        !string.IsNullOrWhiteSpace(Serial) || !string.IsNullOrWhiteSpace(LocationPath) ||
+        !string.IsNullOrWhiteSpace(InstanceId);
 }
 
 public sealed class UsbRuleTarget { public string InstanceId { get; set; } = ""; public string FriendlyName { get; set; } = ""; public bool IsCritical { get; set; } }
@@ -132,7 +145,16 @@ public sealed class UsbDeviceInfo
     public string DeviceClass { get; set; } = "";
     public string VidPid { get; set; } = "";
     public bool IsEnabled { get; set; }
-    public bool IsCritical { get; set; }
+
+    /// <summary>True when this devnode is itself a protected device (input, system, hub root).</summary>
+    public bool IsSelfCritical { get; set; }
+
+    /// <summary>True when something protected sits beneath this devnode. Set by criticality
+    /// propagation, because a USB composite keyboard's own devnode has class "USB" and only its
+    /// HID child carries class "Keyboard".</summary>
+    public bool HasCriticalDescendant { get; set; }
+
+    [JsonIgnore] public bool IsCritical => IsSelfCritical || HasCriticalDescendant;
     public uint DevInst { get; set; }
     public string ParentInstanceId { get; set; } = "";
     public string ContainerId { get; set; } = "";
@@ -176,7 +198,18 @@ public sealed class UsbTopologyNode
     public int PortNumber { get; set; }
     public bool IsEnabled { get; set; }
     public bool IsPresent { get; set; }
-    public bool IsCritical { get; set; }
+
+    /// <summary>True when this node is itself protected.</summary>
+    public bool IsSelfCritical { get; set; }
+
+    /// <summary>True when anything protected sits beneath this node, including inside its
+    /// Interfaces group -- which is exactly where a composite keyboard's HID node lives.</summary>
+    public bool HasCriticalDescendant { get; set; }
+
+    /// <summary>Names of the protected devices beneath this node, for the confirmation dialog.</summary>
+    public List<string> CriticalDescendantNames { get; set; } = [];
+
+    [JsonIgnore] public bool IsCritical => IsSelfCritical || HasCriticalDescendant;
     [JsonIgnore] public UsbTopologyNode? Parent { get; set; }
     public List<UsbTopologyNode> Children { get; set; } = [];
     public IEnumerable<UsbTopologyNode> Flatten() { yield return this; foreach (var child in Children) foreach (var item in child.Flatten()) yield return item; }
