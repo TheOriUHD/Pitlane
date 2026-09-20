@@ -112,6 +112,37 @@ public sealed class DisplayPathRecord
     public string MonitorDevicePath { get; set; } = "";
     public string FriendlyName { get; set; } = "Display";
     public string SourceName { get; set; } = "";
+
+    // ---- stable identity -------------------------------------------------------------
+    // Adapter LUIDs are allocated per boot. Every one of the fields below survives a reboot,
+    // a GPU driver restart and a display-stack reset; SourceAdapter/TargetAdapter do not.
+
+    /// <summary>Adapter device path from GET_ADAPTER_NAME. \\?\PCI#... for a graphics card.
+    /// This is both the LUID replacement for identity and the indirect-display discriminator.</summary>
+    public string AdapterDevicePath { get; set; } = "";
+
+    public ushort EdidManufactureId { get; set; }
+    public ushort EdidProductCodeId { get; set; }
+    public uint ConnectorInstance { get; set; }
+
+    /// <summary>Only when DISPLAYCONFIG_TARGET_DEVICE_NAME reported EDID_IDS_VALID. The EDID
+    /// identity fields are meaningless otherwise and must not be used for matching.</summary>
+    public bool EdidIdsValid { get; set; }
+
+    // ---- indirect display handling ---------------------------------------------------
+
+    /// <summary>True when this display is driven by an indirect display driver (DisplayLink, a
+    /// USB dock, a virtual display) rather than a graphics output.</summary>
+    public bool IsIndirect { get; set; }
+
+    /// <summary>Human-readable justification, shown in the opt-in warning.</summary>
+    public string IndirectReason { get; set; } = "";
+
+    /// <summary>
+    /// User state, not captured state: whether the user explicitly opted in to letting
+    /// SimRigMode manage this indirect display. Default false means "carry through untouched".
+    /// </summary>
+    public bool IndirectOptIn { get; set; }
 }
 
 public sealed class DisplayModeRecord

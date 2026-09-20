@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using SimRigMode.Models;
+using SimRigMode.Services.Display;
 using N = SimRigMode.NativeInterop.DisplayConfigNative;
 
 namespace SimRigMode.Services;
@@ -50,11 +51,21 @@ public sealed class DisplayService
             throw new InvalidOperationException($"Display configuration capture failed (Win32 {error}) after {attempt} attempt(s).");
         }
         var result = new DisplaySnapshot();
+        // One GET_ADAPTER_NAME per distinct adapter, not per path.
+        var adapterPaths = new Dictionary<long, string>();
         foreach (var p in paths.Take((int)pc))
         {
             var target = GetTargetName(p.targetInfo.adapterId, p.targetInfo.id); var source = GetSourceName(p.sourceInfo.adapterId, p.sourceInfo.id);
+            var adapterKey = p.targetInfo.adapterId.Value;
+            if (!adapterPaths.TryGetValue(adapterKey, out var adapterPath))
+                adapterPaths[adapterKey] = adapterPath = GetAdapterDevicePath(p.targetInfo.adapterId);
+            var verdict = IndirectDisplayDetector.Classify(adapterPath, p.targetInfo.outputTechnology);
             result.Paths.Add(new()
             {
+                AdapterDevicePath = adapterPath,
+                EdidManufactureId = target.edidManufactureId, EdidProductCodeId = target.edidProductCodeId,
+                ConnectorInstance = target.connectorInstance, EdidIdsValid = target.edidIdsValid,
+                IsIndirect = verdict.IsIndirect, IndirectReason = verdict.Reason,
                 SourceAdapter = p.sourceInfo.adapterId.Value, SourceId = p.sourceInfo.id, SourceModeInfoIdx = p.sourceInfo.modeInfoIdx,
                 TargetAdapter = p.targetInfo.adapterId.Value, TargetId = p.targetInfo.id, TargetModeInfoIdx = p.targetInfo.modeInfoIdx,
                 OutputTechnology = p.targetInfo.outputTechnology, Rotation = p.targetInfo.rotation, Scaling = p.targetInfo.scaling,
@@ -162,7 +173,11 @@ public sealed class DisplayService
         DesktopModeInfoIdx = path.DesktopModeInfoIdx, OutputTechnology = path.OutputTechnology, Rotation = path.Rotation,
         Scaling = path.Scaling, RefreshNumerator = path.RefreshNumerator, RefreshDenominator = path.RefreshDenominator,
         ScanLineOrdering = path.ScanLineOrdering, TargetAvailable = path.TargetAvailable, StatusFlags = path.StatusFlags,
-        MonitorDevicePath = path.MonitorDevicePath, FriendlyName = path.FriendlyName, SourceName = path.SourceName
+        MonitorDevicePath = path.MonitorDevicePath, FriendlyName = path.FriendlyName, SourceName = path.SourceName,
+        AdapterDevicePath = path.AdapterDevicePath, EdidManufactureId = path.EdidManufactureId,
+        EdidProductCodeId = path.EdidProductCodeId, ConnectorInstance = path.ConnectorInstance,
+        EdidIdsValid = path.EdidIdsValid, IsIndirect = path.IsIndirect,
+        IndirectReason = path.IndirectReason, IndirectOptIn = path.IndirectOptIn
     };
     private static DisplayModeRecord CloneMode(DisplayModeRecord mode) => new()
     {
@@ -177,10 +192,30 @@ public sealed class DisplayService
         (!string.IsNullOrWhiteSpace(left.MonitorDevicePath) && left.MonitorDevicePath.Equals(right.MonitorDevicePath, StringComparison.OrdinalIgnoreCase)) ||
         left.TargetAdapter == right.TargetAdapter && left.TargetId == right.TargetId;
 
-    private static (string friendly, string path) GetTargetName(N.LUID adapter, uint id)
+    private readonly record struct TargetName(string friendly, string path, ushort edidManufactureId,
+        ushort edidProductCodeId, uint connectorInstance, bool edidIdsValid);
+
+    private static TargetName GetTargetName(N.LUID adapter, uint id)
     {
         var req = new N.DISPLAYCONFIG_TARGET_DEVICE_NAME { header = new() { type = N.DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME, size = (uint)Marshal.SizeOf<N.DISPLAYCONFIG_TARGET_DEVICE_NAME>(), adapterId = adapter, id = id }, monitorFriendlyDeviceName = "", monitorDevicePath = "" };
-        return N.DisplayConfigGetDeviceInfo(ref req) == 0 ? (req.monitorFriendlyDeviceName, req.monitorDevicePath) : ("", "");
+        if (N.DisplayConfigGetDeviceInfo(ref req) != 0) return new("", "", 0, 0, 0, false);
+        // The EDID ids are only meaningful when Windows says so. Previously everything except
+        // the friendly name and device path was discarded.
+        var edidValid = (req.flags & N.TARGET_NAME_FLAG_EDID_IDS_VALID) != 0;
+        return new(req.monitorFriendlyDeviceName, req.monitorDevicePath,
+            edidValid ? req.edidManufactureId : (ushort)0, edidValid ? req.edidProductCodeId : (ushort)0,
+            req.connectorInstance, edidValid);
+    }
+
+    /// <summary>
+    /// The adapter's device path. \\?\PCI#... identifies a real graphics adapter; anything else
+    /// is an indirect display driver. Returns "" on failure, which
+    /// <see cref="IndirectDisplayDetector"/> treats as indirect by design.
+    /// </summary>
+    private static string GetAdapterDevicePath(N.LUID adapter)
+    {
+        var req = new N.DISPLAYCONFIG_ADAPTER_NAME { header = new() { type = N.DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME, size = (uint)Marshal.SizeOf<N.DISPLAYCONFIG_ADAPTER_NAME>(), adapterId = adapter, id = 0 }, adapterDevicePath = "" };
+        return N.DisplayConfigGetDeviceInfo(ref req) == 0 ? req.adapterDevicePath : "";
     }
     private static string GetSourceName(N.LUID adapter, uint id)
     {
