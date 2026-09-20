@@ -8,7 +8,14 @@ public sealed class UsbTopologyService
     private readonly UsbDeviceService _devices;
     public UsbTopologyService(UsbDeviceService devices) => _devices = devices;
 
-    public UsbTopology Enumerate(bool includeHubIoctlDetails = true)
+    /// <summary>
+    /// Builds the USB tree. <paramref name="includeHubIoctlDetails"/> defaults to FALSE: the deep
+    /// scan opens every hub and issues 2-3 IOCTLs per port, including GET_DESCRIPTOR control
+    /// transfers that wake devices out of selective suspend - several hundred synchronous calls
+    /// across the whole bus. That used to run on every refresh of the USB settings page. It is now
+    /// opt-in, so nothing touches the bus unless the user asks for detail.
+    /// </summary>
+    public UsbTopology Enumerate(bool includeHubIoctlDetails = false)
     {
         var inventory = _devices.Enumerate();
         var byId = inventory.ToDictionary(item => item.InstanceId, StringComparer.OrdinalIgnoreCase);
