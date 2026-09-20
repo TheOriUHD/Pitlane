@@ -1,0 +1,225 @@
+<Window x:Class="SimRigMode.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ct="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:SimRigMode.UI">
+
+    <Grid x:Name="RootGrid" Background="Transparent">
+        <Grid.RowDefinitions><RowDefinition Height="40"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="40" Padding="16,0,0,0" Background="Transparent">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE7FC;" FontSize="15" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+            <TextBlock Grid.Column="1" Text="SimRigMode" Margin="9,0,0,0" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"/>
+        </Grid>
+
+        <NavigationView x:Name="Navigation" Grid.Row="1"
+            PaneDisplayMode="Auto" IsSettingsVisible="False" IsBackButtonVisible="Collapsed"
+            IsTitleBarAutoPaddingEnabled="False" OpenPaneLength="250" CompactModeThresholdWidth="720"
+            ExpandedModeThresholdWidth="1000" SelectionChanged="Navigation_SelectionChanged">
+            <NavigationView.PaneHeader>
+                <StackPanel Orientation="Horizontal" Spacing="10" Margin="2,8,0,12">
+                    <FontIcon Glyph="&#xE7FC;" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="SimRigMode" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </NavigationView.PaneHeader>
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Overview" Tag="overview"><NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;"/></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Desktop mode" Tag="desktop"><NavigationViewItem.Icon><FontIcon Glyph="&#xE7F4;"/></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Sim rig mode" Tag="simrig"><NavigationViewItem.Icon><FontIcon Glyph="&#xE768;"/></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItemSeparator/>
+                <NavigationViewItem Content="Displays" Tag="displays"><NavigationViewItem.Icon><FontIcon Glyph="&#xE7F4;"/></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="USB devices" Tag="usb"><NavigationViewItem.Icon><FontIcon Glyph="&#xECF0;"/></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Audio" Tag="audio"><NavigationViewItem.Icon><FontIcon Glyph="&#xE767;"/></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Integrations" Tag="integrations"><NavigationViewItem.Icon><FontIcon Glyph="&#xE774;"/></NavigationViewItem.Icon></NavigationViewItem>
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="Settings &amp; diagnostics" Tag="settings"><NavigationViewItem.Icon><FontIcon Glyph="&#xE713;"/></NavigationViewItem.Icon></NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+
+            <Grid x:Name="PageHost" Background="Transparent" SizeChanged="PageHost_SizeChanged">
+                <!-- Overview -->
+                <ScrollViewer x:Name="OverviewPage" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Style="{StaticResource PageStackStyle}">
+                        <StackPanel Spacing="4"><TextBlock Text="Overview" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Switch workspaces and review configuration at a glance." Style="{StaticResource BodyTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+                        <InfoBar x:Name="OverviewInfoBar" IsOpen="False" IsClosable="True"/>
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Current mode" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                            <ct:SettingsCard x:Name="CurrentModeCard" Header="Mode not selected" Description="Choose a workspace to begin.">
+                                <ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE73E;"/></ct:SettingsCard.HeaderIcon>
+                                <Border Width="10" Height="10" CornerRadius="5" Background="{ThemeResource AccentFillColorDefaultBrush}"/>
+                            </ct:SettingsCard>
+                        </StackPanel>
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Workspace" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                            <StackPanel Spacing="8">
+                                <ct:SettingsCard x:Name="DesktopWorkspaceCard" Header="Desktop mode" Description="No display profile captured">
+                                    <ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7F4;"/></ct:SettingsCard.HeaderIcon>
+                                    <Button x:Name="DesktopSwitchButton" Content="Switch" Click="DesktopSwitch_Click"/>
+                                </ct:SettingsCard>
+                                <ct:SettingsCard x:Name="RigWorkspaceCard" Header="Sim rig mode" Description="No display profile captured">
+                                    <ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE768;"/></ct:SettingsCard.HeaderIcon>
+                                    <Button x:Name="RigSwitchButton" Content="Switch" Click="RigSwitch_Click" Style="{StaticResource AccentButtonStyle}"/>
+                                </ct:SettingsCard>
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel x:Name="TransitionPanel" Spacing="10" Visibility="Collapsed">
+                            <Grid><TextBlock x:Name="TransitionTitle" Style="{StaticResource SubtitleTextBlockStyle}"/><Button x:Name="CancelTransitionButton" Content="Cancel" HorizontalAlignment="Right" Click="CancelTransition_Click"/></Grid>
+                            <ProgressBar x:Name="TransitionProgress" IsIndeterminate="True"/>
+                            <ItemsControl x:Name="TransitionSteps"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Margin="8,3" Style="{StaticResource BodyTextBlockStyle}"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                        </StackPanel>
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Configuration" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                            <ct:SettingsCard x:Name="DesktopReadinessCard" Header="Desktop display profile" Description="Not captured"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE73E;"/></ct:SettingsCard.HeaderIcon></ct:SettingsCard>
+                            <ct:SettingsCard x:Name="RigReadinessCard" Header="Sim rig display profile" Description="Not captured"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE73E;"/></ct:SettingsCard.HeaderIcon></ct:SettingsCard>
+                            <ct:SettingsCard x:Name="IntegrationReadinessCard" Header="Home Assistant power control" Description="Disabled"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE774;"/></ct:SettingsCard.HeaderIcon></ct:SettingsCard>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Desktop mode -->
+                <ScrollViewer x:Name="DesktopPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Style="{StaticResource PageStackStyle}">
+                        <StackPanel Spacing="4"><TextBlock Text="Desktop mode" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Everything SimRigMode restores when you return to your desktop workspace." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+                        <InfoBar x:Name="DesktopInfoBar" IsOpen="False" IsClosable="True"/>
+                        <TextBlock Text="Workspace profile" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <ct:SettingsCard x:Name="DesktopDisplayCard" Header="Display layout" Description="No profile captured"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7F4;"/></ct:SettingsCard.HeaderIcon><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Capture current layout" Click="CaptureDesktop_Click"/><Button Content="Choose displays" Tag="desktop" Click="ChooseDisplays_Click"/></StackPanel></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="DesktopUsbCard" Header="USB policy" Description="No device rules"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xECF0;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="usb" Click="NavigateButton_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="DesktopAudioCard" Header="Audio policy" Description="Do not change"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE767;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="audio" Click="NavigateButton_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Apply this workspace" Description="Run the complete Desktop mode transition now."><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE72C;"/></ct:SettingsCard.HeaderIcon><Button Content="Apply" Click="DesktopSwitch_Click" Style="{StaticResource AccentButtonStyle}"/></ct:SettingsCard>
+                        <TextBlock Text="Transition" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <ct:SettingsExpander Header="Timing" Description="Delays used while returning to Desktop mode">
+                            <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE916;"/></ct:SettingsExpander.HeaderIcon>
+                            <ct:SettingsExpander.Items><ct:SettingsCard Header="Hardware power-off delay" Description="Wait before turning off the smart plug"><NumberBox x:Name="DesktopPowerOffDelay" Minimum="0" Maximum="300" SpinButtonPlacementMode="Compact" ValueChanged="Delay_ValueChanged"/></ct:SettingsCard></ct:SettingsExpander.Items>
+                        </ct:SettingsExpander>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Sim rig mode -->
+                <ScrollViewer x:Name="SimRigPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Style="{StaticResource PageStackStyle}">
+                        <StackPanel Spacing="4"><TextBlock Text="Sim rig mode" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Power, devices, displays, and audio used by the simulator workspace." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+                        <InfoBar x:Name="RigInfoBar" IsOpen="False" IsClosable="True"/>
+                        <TextBlock Text="Workspace profile" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <ct:SettingsCard x:Name="RigDisplayCard" Header="Display layout" Description="No profile captured"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7F4;"/></ct:SettingsCard.HeaderIcon><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Capture current layout" Click="CaptureRig_Click"/><Button Content="Choose displays" Tag="simrig" Click="ChooseDisplays_Click"/></StackPanel></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="RigUsbCard" Header="USB policy" Description="No device rules"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xECF0;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="usb" Click="NavigateButton_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="RigAudioCard" Header="Audio policy" Description="Do not change"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE767;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="audio" Click="NavigateButton_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="RigPowerCard" Header="Rig power" Description="Home Assistant integration disabled"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="integrations" Click="NavigateButton_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Apply this workspace" Description="Run the complete Sim rig mode transition now."><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE72C;"/></ct:SettingsCard.HeaderIcon><Button Content="Apply" Click="RigSwitch_Click" Style="{StaticResource AccentButtonStyle}"/></ct:SettingsCard>
+                        <TextBlock Text="Transition" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <ct:SettingsExpander Header="Timing" Description="Power-on and device enumeration waits">
+                            <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE916;"/></ct:SettingsExpander.HeaderIcon>
+                            <ct:SettingsExpander.Items>
+                                <ct:SettingsCard Header="Hardware power-on wait" Description="Allow powered rig hardware to start"><NumberBox x:Name="RigPowerOnDelay" Minimum="0" Maximum="300" SpinButtonPlacementMode="Compact" ValueChanged="Delay_ValueChanged"/></ct:SettingsCard>
+                                <ct:SettingsCard Header="USB enumeration wait" Description="Allow enabled devices to appear"><NumberBox x:Name="UsbEnumerationDelay" Minimum="0" Maximum="300" SpinButtonPlacementMode="Compact" ValueChanged="Delay_ValueChanged"/></ct:SettingsCard>
+                            </ct:SettingsExpander.Items>
+                        </ct:SettingsExpander>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Displays -->
+                <ScrollViewer x:Name="DisplaysPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Style="{StaticResource PageStackStyle}">
+                        <Grid><StackPanel Spacing="4"><TextBlock Text="Displays" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Review the active topology and captured workspace profiles." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><Button HorizontalAlignment="Right" VerticalAlignment="Bottom" Click="RefreshDisplays_Click"><StackPanel Orientation="Horizontal" Spacing="7"><SymbolIcon Symbol="Refresh"/><TextBlock Text="Refresh"/></StackPanel></Button></Grid>
+                        <InfoBar x:Name="DisplayInfoBar" IsOpen="False" IsClosable="True"/>
+                        <InfoBar x:Name="DisplayEditorInfoBar" IsOpen="False" IsClosable="True" Severity="Informational"/>
+                        <TextBlock Text="Select a display to review its configuration." Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <Border Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="{ThemeResource ControlCornerRadius}" Padding="20">
+                            <Canvas x:Name="MonitorCanvas" Height="260" SizeChanged="MonitorCanvas_SizeChanged"/>
+                        </Border>
+                        <TextBlock Text="Selected display" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <ct:SettingsCard x:Name="SelectedDisplayCard" Header="Select a display above" Description="Display details appear here"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7F4;"/></ct:SettingsCard.HeaderIcon></ct:SettingsCard>
+                        <ct:SettingsExpander Header="Display identity" Description="Stable Windows identifiers used to match this display">
+                            <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE946;"/></ct:SettingsExpander.HeaderIcon>
+                            <ct:SettingsExpander.Items><ct:SettingsCard Header="Device details"><TextBlock x:Name="DisplayIdentityText" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></ct:SettingsCard></ct:SettingsExpander.Items>
+                        </ct:SettingsExpander>
+                        <ct:SettingsCard Header="Desktop mode" Description="Use this display in the Desktop workspace"><ToggleSwitch x:Name="DisplayDesktopEnabled" Toggled="DisplayModeToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Sim rig mode" Description="Use this display in the Sim rig workspace"><ToggleSwitch x:Name="DisplayRigEnabled" Toggled="DisplayModeToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Resolution" Description="Exact value in the active native topology"><ComboBox x:Name="DisplayResolutionCombo" MinWidth="180" IsEnabled="False"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Refresh rate" Description="Native rational timing; no artificial limit"><ComboBox x:Name="DisplayRefreshCombo" MinWidth="180" IsEnabled="False"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Orientation and primary" Description="Captured with each complete layout"><ComboBox x:Name="DisplayOrientationCombo" MinWidth="180" IsEnabled="False"/></ct:SettingsCard>
+                        <TextBlock Text="Capture a complete layout to copy everything at once, or select displays above and edit each workspace manually. Newly included displays keep their current position, resolution, and exact refresh timing." Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- USB -->
+                <Grid x:Name="UsbPage" Visibility="Collapsed" Padding="32,24,32,0">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <Grid><StackPanel Spacing="4"><TextBlock Text="USB topology" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Manage physical USB branches by controller, hub, and port." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Bottom"><Button Content="Expand all" Click="ExpandUsb_Click"/><Button Content="Collapse all" Click="CollapseUsb_Click"/><Button Click="RefreshUsb_Click"><StackPanel Orientation="Horizontal" Spacing="7"><SymbolIcon Symbol="Refresh"/><TextBlock Text="Refresh topology"/></StackPanel></Button></StackPanel></Grid>
+                    <InfoBar x:Name="UsbInfoBar" Grid.Row="1" Margin="0,16,0,0" IsOpen="False" IsClosable="True"/>
+                    <Grid Grid.Row="2" Margin="0,16,0,12" ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><AutoSuggestBox x:Name="UsbSearch" PlaceholderText="Search the physical topology" QueryIcon="Find" TextChanged="UsbSearch_TextChanged"/><ToggleSwitch x:Name="UsbTechnicalToggle" Grid.Column="1" Header="Technical details" Toggled="UsbTechnicalToggle_Toggled"/></Grid>
+                    <TreeView x:Name="UsbTree" Grid.Row="3" SelectionMode="Single" ItemInvoked="UsbTree_ItemInvoked"><TreeView.ItemTemplate><DataTemplate><Grid MinHeight="58" Padding="4" ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition/><ColumnDefinition Width="130"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions><FontIcon Glyph="{Binding Content.Glyph}" FontSize="18"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock Text="{Binding Content.Name}" Style="{StaticResource BodyStrongTextBlockStyle}"/><TextBlock Text="{Binding Content.Detail}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Content.EffectivePolicy}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" FontSize="12"/><TextBlock Text="{Binding Content.Technical}" Visibility="{Binding Content.TechnicalVisibility}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" FontSize="11"/></StackPanel><ComboBox Grid.Column="2" Header="Desktop" Visibility="{Binding Content.PolicyVisibility}" SelectedIndex="{Binding Content.DesktopIndex, Mode=TwoWay}"><x:String>Inherit</x:String><x:String>Enabled</x:String><x:String>Disabled</x:String></ComboBox><ComboBox Grid.Column="3" Header="Sim rig" Visibility="{Binding Content.PolicyVisibility}" SelectedIndex="{Binding Content.SimRigIndex, Mode=TwoWay}"><x:String>Inherit</x:String><x:String>Enabled</x:String><x:String>Disabled</x:String></ComboBox></Grid></DataTemplate></TreeView.ItemTemplate></TreeView>
+                    <ct:SettingsExpander x:Name="UsbDetailsExpander" Grid.Row="4" Header="Select a device" Description="Physical connection and policy details" Margin="0,12,0,0"><ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE946;"/></ct:SettingsExpander.HeaderIcon><ct:SettingsExpander.Items><ct:SettingsCard Header="Device details"><TextBlock x:Name="UsbDetailsText" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></ct:SettingsCard><ct:SettingsCard Header="Disable hub itself" Description="Disconnects the entire branch; child overrides cannot operate"><ToggleSwitch x:Name="DisableHubItselfToggle" Toggled="DisableHubItselfToggle_Toggled" IsEnabled="False"/></ct:SettingsCard><ct:SettingsCard Header="Affected devices"><TextBlock x:Name="UsbAffectedText" TextWrapping="Wrap"/></ct:SettingsCard></ct:SettingsExpander.Items></ct:SettingsExpander>
+                    <Grid Grid.Row="5" Padding="0,12"><TextBlock x:Name="UsbCountText" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><Button Content="Save topology policies" HorizontalAlignment="Right" Click="SaveUsb_Click" Style="{StaticResource AccentButtonStyle}"/></Grid>
+                </Grid>
+
+                <!-- Audio -->
+                <ScrollViewer x:Name="AudioPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Style="{StaticResource PageStackStyle}">
+                        <Grid><StackPanel Spacing="4"><TextBlock Text="Audio" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Select stable Windows audio endpoints for each workspace." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><Button HorizontalAlignment="Right" VerticalAlignment="Bottom" Click="RefreshAudio_Click"><StackPanel Orientation="Horizontal" Spacing="7"><SymbolIcon Symbol="Refresh"/><TextBlock Text="Refresh"/></StackPanel></Button></Grid>
+                        <InfoBar x:Name="AudioInfoBar" IsOpen="False" IsClosable="True"/>
+                        <TextBlock Text="Desktop mode" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <ct:SettingsCard Header="Default playback device" Description="Primary desktop audio output"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE995;"/></ct:SettingsCard.HeaderIcon><ComboBox x:Name="DesktopPlayback" MinWidth="280"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Communications playback" Description="Output used for calls"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE767;"/></ct:SettingsCard.HeaderIcon><ComboBox x:Name="DesktopCommPlayback" MinWidth="280"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Default recording device" Description="Primary desktop microphone"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE720;"/></ct:SettingsCard.HeaderIcon><ComboBox x:Name="DesktopRecording" MinWidth="280"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Communications recording" Description="Microphone used for calls"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE720;"/></ct:SettingsCard.HeaderIcon><ComboBox x:Name="DesktopCommRecording" MinWidth="280"/></ct:SettingsCard>
+                        <TextBlock Text="Sim rig mode" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,10,0,0"/>
+                        <ct:SettingsCard Header="Default playback device" Description="Primary simulator audio output"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE995;"/></ct:SettingsCard.HeaderIcon><ComboBox x:Name="RigPlayback" MinWidth="280"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Communications playback" Description="Simulator communications output"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE767;"/></ct:SettingsCard.HeaderIcon><ComboBox x:Name="RigCommPlayback" MinWidth="280"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Default recording device" Description="Primary simulator microphone"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE720;"/></ct:SettingsCard.HeaderIcon><ComboBox x:Name="RigRecording" MinWidth="280"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Communications recording" Description="Simulator communications microphone"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE720;"/></ct:SettingsCard.HeaderIcon><ComboBox x:Name="RigCommRecording" MinWidth="280"/></ct:SettingsCard>
+                        <Button Content="Save audio settings" HorizontalAlignment="Right" Click="SaveAudio_Click" Style="{StaticResource AccentButtonStyle}"/>
+                        <ct:SettingsExpander Header="Endpoint details" Description="Stable endpoint IDs are stored internally and survive enumeration-order changes"><ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE946;"/></ct:SettingsExpander.HeaderIcon><ct:SettingsExpander.Items><ct:SettingsCard Header="Active inventory"><TextBlock x:Name="AudioInventoryText" TextWrapping="Wrap"/></ct:SettingsCard></ct:SettingsExpander.Items></ct:SettingsExpander>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Integrations -->
+                <ScrollViewer x:Name="IntegrationsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Style="{StaticResource PageStackStyle}">
+                        <StackPanel Spacing="4"><TextBlock Text="Integrations" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Optionally control rig power through Home Assistant." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+                        <InfoBar x:Name="IntegrationInfoBar" IsOpen="False" IsClosable="True"/>
+                        <ct:SettingsCard Header="Home Assistant power control" Description="Turn rig hardware on and off during transitions"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="IntegrationToggle" Toggled="IntegrationToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsExpander x:Name="IntegrationExpander" Header="Connection settings" Description="Use webhooks, or the REST API when webhook URLs are empty">
+                            <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE774;"/></ct:SettingsExpander.HeaderIcon>
+                            <ct:SettingsExpander.Items>
+                                <ct:SettingsCard Header="ON webhook" Description="HTTP POST URL used before entering Sim rig mode"><TextBox x:Name="OnWebhookText" Width="380" PlaceholderText="https://…"/></ct:SettingsCard>
+                                <ct:SettingsCard Header="OFF webhook" Description="HTTP POST URL used after entering Desktop mode"><TextBox x:Name="OffWebhookText" Width="380" PlaceholderText="https://…"/></ct:SettingsCard>
+                                <ct:SettingsCard Header="Home Assistant URL" Description="Base URL for REST API mode"><TextBox x:Name="HaBaseUrlText" Width="380" PlaceholderText="http://homeassistant.local:8123"/></ct:SettingsCard>
+                                <ct:SettingsCard Header="Entity ID" Description="Switch entity used for rig power"><TextBox x:Name="HaEntityText" Width="280" PlaceholderText="switch.sim_rig"/></ct:SettingsCard>
+                                <ct:SettingsCard Header="Access token" Description="Protected with Windows DPAPI for this user"><PasswordBox x:Name="HaTokenBox" Width="300" PlaceholderText="Leave blank to keep the saved token"/></ct:SettingsCard>
+                            </ct:SettingsExpander.Items>
+                        </ct:SettingsExpander>
+                        <Grid x:Name="IntegrationActions"><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Test ON" Click="TestOn_Click"/><Button Content="Test OFF" Click="TestOff_Click"/></StackPanel><Button Content="Save integration" HorizontalAlignment="Right" Click="SaveIntegration_Click" Style="{StaticResource AccentButtonStyle}"/></Grid>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Settings / diagnostics -->
+                <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Style="{StaticResource PageStackStyle}">
+                        <StackPanel Spacing="4"><TextBlock Text="Settings &amp; diagnostics" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Startup, shortcuts, configuration, and troubleshooting." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+                        <InfoBar x:Name="SettingsInfoBar" IsOpen="False" IsClosable="True"/>
+                        <TextBlock Text="General" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <ct:SettingsCard Header="Start with Windows" Description="Launch SimRigMode when you sign in"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="StartupToggle" Toggled="StartupToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Global shortcuts" Description="Switch modes without opening the tray menu"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE765;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="HotkeysToggle" Toggled="HotkeysToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsExpander x:Name="HotkeysExpander" Header="Shortcut keys" Description="Use combinations such as Ctrl+Alt+D">
+                            <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE765;"/></ct:SettingsExpander.HeaderIcon>
+                            <ct:SettingsExpander.Items><ct:SettingsCard Header="Desktop mode"><TextBox x:Name="DesktopHotkeyText" Width="220"/></ct:SettingsCard><ct:SettingsCard Header="Sim rig mode"><TextBox x:Name="RigHotkeyText" Width="220"/></ct:SettingsCard></ct:SettingsExpander.Items>
+                        </ct:SettingsExpander>
+                        <TextBlock Text="Configuration" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,10,0,0"/>
+                        <ct:SettingsCard Header="Export configuration" Description="Save a portable JSON backup"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE74E;"/></ct:SettingsCard.HeaderIcon><Button Content="Export" Click="Export_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Import configuration" Description="Restore settings from a JSON backup"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE8B5;"/></ct:SettingsCard.HeaderIcon><Button Content="Import" Click="Import_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Reset SimRigMode" Description="Remove captured profiles and return all settings to defaults"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE777;"/></ct:SettingsCard.HeaderIcon><Button Content="Reset" Click="Reset_Click"/></ct:SettingsCard>
+                        <Button Content="Save general settings" HorizontalAlignment="Right" Click="SaveGeneral_Click" Style="{StaticResource AccentButtonStyle}"/>
+                        <TextBlock Text="Diagnostics" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,10,0,0"/>
+                        <ct:SettingsCard Header="Log files" Description="Open the local diagnostics folder"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xED25;"/></ct:SettingsCard.HeaderIcon><Button Content="Open logs" Click="OpenLogs_Click"/></ct:SettingsCard>
+                        <ct:SettingsExpander Header="Recent diagnostic log" Description="Technical events from the current and recent sessions">
+                            <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE9D9;"/></ct:SettingsExpander.HeaderIcon>
+                            <ct:SettingsExpander.Items><ct:SettingsCard Header="Latest entries"><TextBox x:Name="DiagnosticsText" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Mono" MinHeight="220" MaxHeight="400" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"/></ct:SettingsCard></ct:SettingsExpander.Items>
+                        </ct:SettingsExpander>
+                        <ct:SettingsCard Header="SimRigMode" Description="Unpackaged, self-contained WinUI 3 utility"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE946;"/></ct:SettingsCard.HeaderIcon><TextBlock x:Name="VersionText"/></ct:SettingsCard>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </NavigationView>
+    </Grid>
+</Window>

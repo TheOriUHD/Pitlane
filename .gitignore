@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+dist/
+
+# Screenshots and scratch artifacts
+artifacts/
+
+# User-specific / IDE
+*.user
+*.suo
+.vs/
+.idea/
+
+# NuGet
+*.nupkg
+packages/
+
+# Never commit a runnable apphost or a captured machine config
+*.exe
+*.dll
+*.pdb
+config.json

@@ -1,0 +1,17 @@
+<Application x:Class="SimRigMode.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="PageStackStyle" TargetType="StackPanel">
+                <Setter Property="Spacing" Value="16"/>
+                <Setter Property="Margin" Value="32,24,32,32"/>
+                <Setter Property="MaxWidth" Value="1050"/>
+                <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
