@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using SimRigMode.Services.Elevation;
 
 namespace SimRigMode.Services;
 
@@ -12,6 +13,8 @@ public sealed class StartupService
     public void SetEnabled(bool enabled)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunPath);
-        if (enabled) key.SetValue("SimRigMode", $"\"{Environment.ProcessPath}\" --startup"); else key.DeleteValue("SimRigMode", false);
+        // VerifiedSelfPath, not Environment.ProcessPath: run from a test host the latter would
+        // register the TEST binary to launch at every sign-in. Same hazard as the elevation path.
+        if (enabled) key.SetValue("SimRigMode", $"\"{ElevationGuard.VerifiedSelfPath}\" --startup"); else key.DeleteValue("SimRigMode", false);
     }
 }

@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Dispatching;
 using Microsoft.Win32;
@@ -32,9 +30,9 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         _dispatcher = DispatcherQueue.GetForCurrentThread();
-        var commandLine = Environment.GetCommandLineArgs().Skip(1).ToArray();
-        if (TryRunElevatedCommand(commandLine)) return;
 
+        // The elevated device worker is handled in Program.Main, before WinUI starts and before
+        // this type exists. It must never run here: see Services/Elevation/ElevatedWorker.cs.
         _mutex = new Mutex(true, "Local\\SimRigMode.Singleton.2E894921", out var created);
         _ownsMutex = created;
         _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\SimRigMode.Activate.2E894921");
@@ -70,20 +68,6 @@ public partial class App : Application
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
         UnhandledException += (_, eventArgs) => { Log.Error("Unhandled UI error", eventArgs.Exception); _tray?.ShowBalloon("SimRigMode error", eventArgs.Exception.Message, TrayBalloonIcon.Error); eventArgs.Handled = true; };
         Log.Info("SimRigMode started with WinUI 3");
-    }
-
-    private bool TryRunElevatedCommand(string[] args)
-    {
-        if (args.Length != 2 || args[0] != "--elevated-device-batch") return false;
-        try
-        {
-            var value = args[1].Replace('-', '+').Replace('_', '/'); value += new string('=', (4 - value.Length % 4) % 4);
-            var operations = JsonSerializer.Deserialize<List<UsbDeviceService.DeviceOperation>>(Encoding.UTF8.GetString(Convert.FromBase64String(value))) ?? [];
-            foreach (var operation in operations) { var result = UsbDeviceService.PerformLocalOperation(operation.InstanceId, operation.Enable); if (result != 0) Environment.Exit((int)Math.Min(result, 255)); }
-            Environment.Exit(0);
-        }
-        catch { Environment.Exit(1); }
-        return true;
     }
 
     internal async Task SwitchModeAsync(WorkspaceMode mode)

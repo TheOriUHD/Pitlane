@@ -22,7 +22,15 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <ApplicationIcon>Assets\SimRigMode.ico</ApplicationIcon>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <!-- Program.cs provides Main so the elevated device worker can run before WinUI starts. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Compiled-in identity that ElevationGuard checks before any "runas" relaunch or startup
+         registration. Renaming a binary cannot forge this. -->
+    <AssemblyMetadata Include="SimRigMode.ProductIdentity" Value="SimRigMode/elevation-protocol-1" />
+  </ItemGroup>
   <ItemGroup>
     <!-- This project sits at the repo root, so the SDK default globs would otherwise swallow
          every nested project's sources AND their build output. Page/ApplicationDefinition/

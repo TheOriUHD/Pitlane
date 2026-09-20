@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using SimRigMode.Models;
+using SimRigMode.Services.Elevation;
 using N = SimRigMode.NativeInterop.SetupApiNative;
 
 namespace SimRigMode.Services;
@@ -81,17 +82,40 @@ public sealed class UsbDeviceService
     public async Task ApplyBatchElevatedAsync(IReadOnlyList<DeviceOperation> operations, CancellationToken token)
     {
         if (operations.Count == 0) return;
+
+        // Fails closed unless this process really is the production SimRigMode image and is not
+        // itself an elevated worker. This is the check that makes the recursion in
+        // docs/report.md impossible: a test host can never satisfy it.
+        ElevationGuard.AssertMayElevate();
+
         var data = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(operations))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        var psi = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
+
+        // ElevationGuard.VerifiedSelfPath, never Environment.ProcessPath directly: under a test
+        // host the latter points at the test binary, which is exactly what went wrong.
+        var psi = new ProcessStartInfo(ElevationGuard.VerifiedSelfPath) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
         psi.ArgumentList.Add("--elevated-device-batch"); psi.ArgumentList.Add(data);
         try
         {
             using var process = Process.Start(psi) ?? throw new InvalidOperationException("The elevated device helper could not be started.");
             await process.WaitForExitAsync(token);
-            if (process.ExitCode != 0) throw new InvalidOperationException($"Windows could not change one or more devices (Configuration Manager result {process.ExitCode}). A reboot may be required.");
+            if (process.ExitCode != 0) throw new InvalidOperationException(DescribeWorkerExit(process.ExitCode));
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) { throw new InvalidOperationException("Elevation was declined.", ex); }
     }
+
+    /// <summary>
+    /// Worker exit codes are distinct from Configuration Manager results, which the previous
+    /// implementation collapsed together via Environment.Exit(Math.Min(result, 255)).
+    /// </summary>
+    private static string DescribeWorkerExit(int exitCode) => exitCode switch
+    {
+        ElevatedWorkerExitCode.MalformedArguments => "The elevated helper rejected its payload. No device was changed.",
+        ElevatedWorkerExitCode.NotProductionImage => "The elevated helper refused to run because it is not the SimRigMode application. No device was changed.",
+        ElevatedWorkerExitCode.SafetyDenied => "The elevated helper refused the request on safety grounds. No device was changed.",
+        ElevatedWorkerExitCode.DeviceOperationFailed => "Windows could not change one or more devices. Some earlier devices in the batch may already have changed. A reboot may be required.",
+        ElevatedWorkerExitCode.InternalError => "The elevated helper failed unexpectedly. No device is known to have changed.",
+        _ => $"The elevated helper exited with an unexpected code ({exitCode})."
+    };
 
     public static bool IsCritical(string name, string cls, string id) => cls.Contains("Keyboard", StringComparison.OrdinalIgnoreCase) || cls.Contains("Mouse", StringComparison.OrdinalIgnoreCase) || cls.Contains("System", StringComparison.OrdinalIgnoreCase) || name.Contains("host controller", StringComparison.OrdinalIgnoreCase) || name.Contains("keyboard", StringComparison.OrdinalIgnoreCase) || name.Contains("mouse", StringComparison.OrdinalIgnoreCase) || id.Contains("ROOT_HUB", StringComparison.OrdinalIgnoreCase);
     private static string ParseVidPid(string id)
