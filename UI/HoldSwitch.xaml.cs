@@ -15,8 +15,8 @@ namespace SimRigMode.UI;
 
 /// <summary>
 /// The Desktop / Sim Rig switch. It only switches when held: the lit half stretches towards the
-/// other side for three seconds, taking on that side's colour, then snaps over. Letting go
-/// earlier springs it back and nothing happens.
+/// other side for <see cref="HoldDuration"/>, taking on that side's colour, then snaps over.
+/// Letting go earlier springs it back and nothing happens.
 ///
 /// Everything that moves is a composition animation driven by two numbers in <see cref="_state"/>:
 /// T, how far the hold has got (0-1), and C, how far the snap to the other side has got (0-1).
@@ -25,7 +25,16 @@ namespace SimRigMode.UI;
 /// </summary>
 public sealed partial class HoldSwitch : UserControl
 {
-    public static readonly TimeSpan HoldDuration = TimeSpan.FromSeconds(3);
+    /// <summary>How long the switch has to be held. Three seconds by default, as in the tray
+    /// flyout, where a click is easily made by accident. The main window asks for one.</summary>
+    public TimeSpan HoldDuration { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>"Hold for 3 seconds to switch to Sim Rig", in this switch's own time.</summary>
+    public string HoldHint(string target)
+    {
+        var seconds = (int)Math.Round(HoldDuration.TotalSeconds);
+        return $"Hold for {seconds} second{(seconds == 1 ? "" : "s")} to switch to {target}";
+    }
 
     private const float Inset = 5;
 
@@ -144,7 +153,6 @@ public sealed partial class HoldSwitch : UserControl
         Bind(ElementCompositionPreview.GetElementVisual(RigLabel), "Opacity", "Lerp(Lerp(p.RA, p.RB, p.T), p.RC, p.C)");
 
         _timer = DispatcherQueue.CreateTimer();
-        _timer.Interval = HoldDuration;
         _timer.IsRepeating = false;
         _timer.Tick += (_, _) => Complete();
 
@@ -326,6 +334,7 @@ public sealed partial class HoldSwitch : UserControl
         charge.Duration = HoldDuration;
         Animate("T", charge);
         Press(0.975f, 0.72f);
+        _timer.Interval = HoldDuration;
         _timer.Start();
         HoldStarted?.Invoke(Other(_mode));
     }

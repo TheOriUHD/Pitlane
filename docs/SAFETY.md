@@ -263,7 +263,7 @@ allows it. A program that runs as administrator cannot be ended, and that is rep
 ## 15. Nothing changes outside a switch you start
 
 SimRigMode changes the machine only inside a mode switch that the user starts: by holding the
-switch in the tray flyout or on the full app's overview for three seconds, from the tray menu,
+switch in the tray flyout for three seconds or on the full app's overview for one, from the tray menu,
 with a global shortcut, or with a mode page's Apply button. Nothing starts a switch automatically, not startup, not resume from
 sleep, and not the watchdog. A dry run reaches no display, audio device, USB device, smart plug
 or app, and does not change the mode on record. A switch changes only what the user configured it for:

@@ -35,7 +35,7 @@ Click the tray icon, hold the switch for three seconds, and you are there.
 
 <p align="center">
   <img src="docs/images/overview.png" width="820" alt="Pitlane's main window: the active mode, the hold-to-switch toggle, and a summary of what each mode changes">
-  <br><sub>The main window: where you are, the same hold-to-switch toggle, and what each mode changes.</sub>
+  <br><sub>The main window: where you are, the same toggle with a one-second hold, and what each mode changes.</sub>
 </p>
 
 <table>
@@ -115,6 +115,7 @@ Prefer to build Pitlane yourself? See [Building from source](#building-from-sour
 
 - **Left-click the tray icon** and **hold the switch for three seconds**. Let go earlier and nothing
   happens. Space or Enter works too.
+- **In the main window**, the same switch needs only a one-second hold.
 - **Right-click the tray icon** to switch straight away, to turn Start with Windows on or off, or
   to quit.
 - **Keyboard shortcuts**: turn on **Global shortcuts** in Settings to switch with Ctrl+Alt+D

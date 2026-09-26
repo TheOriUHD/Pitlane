@@ -54,6 +54,9 @@ public sealed partial class SettingsWindow : Window
         Navigation.SelectedItem = Navigation.MenuItems[0];
         _host.Log.EntryWritten += OnLogEntry;
         _host.Switcher.StepCompleted += OnStepCompleted;
+        // The main window is opened on purpose, so a one-second hold is enough here. The tray
+        // flyout, a click away from anywhere, keeps its three seconds.
+        OverviewSwitch.HoldDuration = TimeSpan.FromSeconds(1);
         OverviewSwitch.HoldStarted += _ => OverviewCaption.Text = "Keep holding";
         OverviewSwitch.HoldCancelled += () => { if (!_transitioning) OverviewCaption.Text = HoldHint(); };
         OverviewSwitch.Confirmed += target => _ = _host.SwitchModeAsync(target);
@@ -462,7 +465,7 @@ public sealed partial class SettingsWindow : Window
     private WorkspaceMode ActiveMode => Config.CurrentMode == WorkspaceMode.SimRig ? WorkspaceMode.SimRig : WorkspaceMode.Desktop;
     private static WorkspaceMode OtherMode(WorkspaceMode mode) => mode == WorkspaceMode.SimRig ? WorkspaceMode.Desktop : WorkspaceMode.SimRig;
     private static string ModeName(WorkspaceMode mode) => mode == WorkspaceMode.SimRig ? "Sim Rig" : "Desktop";
-    private string HoldHint() => $"Hold for 3 seconds to switch to {ModeName(OtherMode(ActiveMode))}";
+    private string HoldHint() => OverviewSwitch.HoldHint(ModeName(OtherMode(ActiveMode)));
 
     // The "Apply this workspace" buttons on the two mode pages: a deliberate click, no hold.
     private async void DesktopSwitch_Click(object sender, RoutedEventArgs e) => await _host.SwitchModeAsync(WorkspaceMode.Desktop);

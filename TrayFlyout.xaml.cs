@@ -375,7 +375,7 @@ public sealed partial class TrayFlyout : Window
 
     private static string ModeName(WorkspaceMode mode) => mode == WorkspaceMode.SimRig ? "Sim Rig" : "Desktop";
     private static WorkspaceMode Other(WorkspaceMode mode) => mode == WorkspaceMode.SimRig ? WorkspaceMode.Desktop : WorkspaceMode.SimRig;
-    private static string HoldHint(WorkspaceMode mode) => $"Hold for 3 seconds to switch to {ModeName(Other(mode))}";
+    private string HoldHint(WorkspaceMode mode) => Switch.HoldHint(ModeName(Other(mode)));
 
     private void Enqueue(Action action) => DispatcherQueue.TryEnqueue(() => action());
 
