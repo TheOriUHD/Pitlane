@@ -131,3 +131,8 @@ the displays itself.
 leaves monitors on the park list out of the layout instead of parking them, and logs every monitor
 dropout, to test by hand whether a monitor still loops without a signal. It says so in the flyout,
 the main window and the tray tooltip, and is never the normal build.
+
+`dotnet publish ... -p:CaptureDemo=true` builds the capture demo (`Product.IsCaptureDemo`), used to
+record the README's switch animation. A switch plays exactly as it looks, for 1.7 s, and changes
+nothing: no display, app, sound, USB device or smart plug is touched, and the mode is never saved.
+Nothing marks it, so the recording looks like the real app. Put the normal build back afterwards.

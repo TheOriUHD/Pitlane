@@ -30,5 +30,18 @@ public static class Product
         false;
 #endif
 
+    /// <summary>
+    /// The capture demo build (dotnet publish -p:CaptureDemo=true), for recording the README's
+    /// switch animation on a real machine. A switch plays exactly as it looks, and changes nothing:
+    /// no display, app, sound, USB device or smart plug is touched, and the mode it shows is never
+    /// saved. It looks like the normal build on purpose, and is never deployed for use.
+    /// </summary>
+    public static bool IsCaptureDemo =>
+#if CAPTURE_DEMO
+        true;
+#else
+        false;
+#endif
+
     private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 }

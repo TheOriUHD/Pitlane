@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/hold-to-switch.gif" width="540" alt="The Pitlane flyout above the taskbar: holding the switch fills it from Desktop towards Sim Rig">
+  <img src="docs/images/hold-to-switch.gif" width="540" alt="The Pitlane flyout switching from Desktop to Sim Rig and back: each switch starts after holding the toggle for three seconds">
 </p>
 
 If one PC runs both your desk and your sim racing rig, every change of place means the same chores.

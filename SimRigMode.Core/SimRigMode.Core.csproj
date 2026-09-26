@@ -34,4 +34,10 @@
     <DefineConstants>$(DefineConstants);STANDBY_TEST</DefineConstants>
   </PropertyGroup>
 
+  <!-- The capture demo build, for recording the README animation:
+       dotnet publish SimRigMode.csproj -p:CaptureDemo=true. See Product.IsCaptureDemo. -->
+  <PropertyGroup Condition="'$(CaptureDemo)' == 'true'">
+    <DefineConstants>$(DefineConstants);CAPTURE_DEMO</DefineConstants>
+  </PropertyGroup>
+
 </Project>

@@ -129,6 +129,11 @@ public sealed class DisplayPowerTests
         => Assert.False(Product.IsStandbyTest);
 
     [Fact]
+    public void TheNormalBuildReallySwitches()
+        // Only the capture demo build plays switches without making them (-p:CaptureDemo=true).
+        => Assert.False(Product.IsCaptureDemo);
+
+    [Fact]
     public void AMonitorTheLayoutUses_IsNotParked()
     {
         var config = ConfigWithRigListed();

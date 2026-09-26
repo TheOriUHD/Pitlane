@@ -125,7 +125,7 @@ public partial class App : Application
             _transitionCancellation?.Dispose(); _transitionCancellation = new CancellationTokenSource();
             if (!displays) return new(await Switcher.SwitchAsync(mode, _transitionCancellation.Token, displays: false), null);
             _tray?.SetState(Configuration.Current.CurrentMode, true); Settings?.BeginTransition(mode); Flyout?.BeginTransition(mode);
-            if (!Configuration.Current.General.DryRunTransitions) { _parkingNow = null; _keeper?.Clear(); }
+            if (!Configuration.Current.General.DryRunTransitions && !Product.IsCaptureDemo) { _parkingNow = null; _keeper?.Clear(); }
             var results = await Switcher.SwitchAsync(mode, _transitionCancellation.Token); var warnings = results.Where(x => !x.Success).ToList();
             _tray?.SetState(Configuration.Current.CurrentMode, false); Settings?.EndTransition(mode, results); Flyout?.EndTransition(results);
             // The flyout shows the outcome itself; a notification on top of it would be noise.

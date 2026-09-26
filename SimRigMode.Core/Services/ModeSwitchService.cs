@@ -20,6 +20,9 @@ public sealed class ModeSwitchService
     public event Action<TransitionStep>? StepCompleted;
     /// <summary>A switch's layout is in, before it is checked; with the monitors it parks.</summary>
     public event Action<IReadOnlyList<string>>? LayoutApplied;
+
+    /// <summary>How long a switch takes in the capture demo build: one sweep of the switch's busy sheen.</summary>
+    private const int DemoSwitchMilliseconds = 1700;
     public ModeSwitchService(ConfigurationService config, DisplayService displays, AppLauncherService apps, UsbDeviceService usb, AudioService audio, HomeAssistantService integration, LoggingService log) => (_config, _displays, _apps, _usb, _audio, _integration, _log) = (config, displays, apps, usb, audio, integration, log);
 
     /// <param name="displays">False for the test switch in Settings: every step runs except the
@@ -33,6 +36,16 @@ public sealed class ModeSwitchService
         _log.Info(displays ? $"Starting transition to {target}" : $"Starting test transition to {target}; the displays are left as they are");
         try
         {
+            if (Product.IsCaptureDemo && displays)
+            {
+                // The capture demo build: the switch plays for one sweep of the busy sheen and
+                // changes nothing. The mode is set in memory only, so the configuration keeps the truth.
+                await Task.Delay(DemoSwitchMilliseconds, token);
+                _config.Current.CurrentMode = target;
+                StateChanged?.Invoke(target, $"{(target == WorkspaceMode.Desktop ? "Desktop" : "Sim Rig")} Mode active");
+                _log.Info($"Capture demo: showed a switch to {target}; nothing was changed");
+                return steps;
+            }
             var mode = target == WorkspaceMode.Desktop ? _config.Current.Desktop : _config.Current.SimRig;
             // Only steps with something to do are run and reported, so the progress a switch
             // shows is what it actually does. The display step always runs.
