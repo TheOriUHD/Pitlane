@@ -76,14 +76,23 @@ Click the tray icon, hold the switch for three seconds, and you are there.
 ### Requirements
 
 - A 64-bit Windows 11 PC.
-- Nothing else. Pitlane is a single file with everything built in: no installer and no runtimes.
+- Nothing else: the installer brings everything Pitlane needs.
 
 ### Install
 
-1. Build `Pitlane.exe` as described in [Building from source](#building-from-source).
-2. Put it in a folder of your choice, like `C:\Tools\Pitlane`, and start it. Pitlane lives in the
-   notification area of the taskbar.
-3. To have it ready after every restart, right-click the tray icon and tick **Start with Windows**.
+1. Download **PitlaneSetup** from the [latest release](https://github.com/TheOriUHD/Pitlane/releases/latest).
+2. Run it and choose where to install Pitlane. It installs for your user account, so it needs no
+   administrator rights.
+3. Pitlane starts in the notification area of the taskbar. To have it ready after every restart,
+   right-click the tray icon and tick **Start with Windows**.
+
+Windows may say the installer comes from an unknown publisher, because it is not code-signed. Click
+**More info**, then **Run anyway**.
+
+To update, run the newer setup; it replaces the installed version. To uninstall, use **Settings →
+Apps → Installed apps**. Your settings stay in `%LOCALAPPDATA%\Pitlane`, in case you come back.
+
+Prefer to build Pitlane yourself? See [Building from source](#building-from-source).
 
 ### Set up your two modes
 
@@ -173,14 +182,22 @@ The guarantees behind this, and the tests that hold the code to them, are in
 
 ## Building from source
 
-You need Windows and the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+For developers, and anyone who prefers to build Pitlane themselves. You need Windows and the
+[.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 
 ```powershell
 dotnet publish SimRigMode.csproj -c Release -r win-x64 --self-contained true -o dist
 ```
 
-This produces `dist\Pitlane.exe`. [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) covers the project
-layout, the tests and how the switching works under the hood.
+This produces `dist\Pitlane.exe`, a single file that runs from any folder. To build the installer
+too, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and run its compiler on the script:
+
+```powershell
+iscc installer\Pitlane.iss
+```
+
+The setup lands in `dist\installer`. [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) covers the project
+layout, the tests, releases and how the switching works under the hood.
 
 ---
 

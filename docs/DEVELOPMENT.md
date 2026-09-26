@@ -22,6 +22,34 @@ and the P/Invoke metadata are kept. No .NET runtime, Windows App SDK runtime, in
 configuration files are needed next to it; the single file extracts its bundled framework files to
 a temporary location when it needs them. No prebuilt binary is kept in this repository.
 
+## Installer and releases
+
+`installer\Pitlane.iss` builds a standard setup wizard with [Inno Setup 6](https://jrsoftware.org/isinfo.php).
+It installs for the current user without an administrator prompt, into a folder they choose
+(`%LOCALAPPDATA%\Programs\Pitlane` by default), with a Start menu shortcut and an uninstaller in
+Windows' Apps list. A running Pitlane is asked to close first. Uninstalling leaves the settings and
+logs in `%LOCALAPPDATA%\Pitlane`, and removes the Start with Windows entry only when it names the
+copy being removed.
+
+To release a new version:
+
+1. Raise `<Version>` in `SimRigMode.csproj` and `AppVersion` in `installer\Pitlane.iss` together.
+   Never change the script's `AppId`: it is how a new version finds and replaces the installed one.
+2. Publish, then build the setup:
+
+   ```powershell
+   dotnet publish SimRigMode.csproj -c Release -r win-x64 --self-contained true -o dist
+   iscc installer\Pitlane.iss
+   ```
+
+3. Publish it on GitHub:
+
+   ```powershell
+   gh release create v<version> dist\installer\PitlaneSetup-<version>.exe --title "Pitlane <version>" --notes-file <notes>
+   ```
+
+The installer and the app are not code-signed, so Windows SmartScreen warns about the setup.
+
 ## Project layout
 
 | Project | Kind | Purpose |
