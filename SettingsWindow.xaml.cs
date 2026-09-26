@@ -658,6 +658,21 @@ public sealed partial class SettingsWindow : Window
     }
 
     /// <summary>The two cards sit side by side, and stack when there is no room for both.</summary>
+    /// <summary>
+    /// The USB page's four buttons sat in the same cell as its title, so in a window of the
+    /// default size the subtitle ran underneath them. They go beside the title when both fit on a
+    /// line, and under it when not.
+    /// </summary>
+    private void UsbHeader_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var below = e.NewSize.Width < UsbToolbar.DesiredSize.Width + 16 + 380;
+        Grid.SetRow(UsbToolbar, below ? 1 : 0);
+        Grid.SetColumn(UsbToolbar, below ? 0 : 1);
+        Grid.SetColumnSpan(UsbToolbar, below ? 2 : 1);
+        UsbToolbar.HorizontalAlignment = below ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        UsbToolbar.Margin = below ? new Thickness(0, 14, 0, 0) : new Thickness(16, 0, 0, 0);
+    }
+
     private void ModeCards_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         var stacked = e.NewSize.Width < 560;

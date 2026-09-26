@@ -1,146 +1,187 @@
-# Pitlane
+<p align="center">
+  <img src="docs/images/icon.png" width="96" alt="Pitlane icon">
+</p>
 
-Pitlane is a Windows 11 tray utility that switches a PC between its Desktop and Sim Rig setups:
-displays, default audio devices, USB devices, the rig's smart plug and the apps that belong to each.
-It is built with WinUI 3 and the Windows App SDK. It was called SimRigMode until 2026-09-24, and
-the code still uses that name.
+<h1 align="center">Pitlane</h1>
 
-## Run
+<p align="center">
+  <b>One switch between your desk and your sim rig.</b><br>
+  A Windows tray app that moves your whole setup over with a single hold:<br>
+  screens, sound, apps, USB devices and the rig's power.
+</p>
 
-Build it first (see below), then copy the published `Pitlane.exe` to any folder and launch it. No prebuilt binary ships in this repository. No .NET runtime, Windows App SDK runtime, installer, scripts, DLLs, or adjacent configuration files are required. The unpackaged single-file application extracts its bundled framework files to a temporary runtime location when needed.
+<p align="center">
+  <img src="docs/images/hold-to-switch.gif" width="540" alt="The Pitlane flyout above the taskbar: holding the switch fills it from Desktop towards Sim Rig">
+</p>
 
-- **Left-click the tray icon** to open the flyout: the active mode and the switch. **Hold the
-  switch for 3 seconds** to change modes; let go earlier and nothing happens. Space or Enter works
-  too while the switch has focus. **Open**, top right, opens the full app.
-- **Right-click the tray icon** for a menu: open the app, switch modes directly, Start with
-  Windows, and Quit.
-- The tray icon's loop is blue in Desktop mode and orange in Sim Rig mode.
-- **Settings → Advanced → Test switch without the displays** runs a real switch minus the display
-  step: linked apps, Home Assistant, audio and USB. **Toggle** alternates, **Sim Rig** and
-  **Desktop** run that mode's steps. The monitors, and the mode Pitlane shows, stay as they are.
+If one PC runs both your desk and your sim racing rig, every change of place means the same chores.
+Screens go on and off, windows get lost on the wrong monitor, the sound comes out of the wrong
+speakers, and SimHub and the wheel software need starting and closing again. Pitlane does all of that for you.
+Click the tray icon, hold the switch for three seconds, and you are there.
 
-Configuration is written atomically to `%LOCALAPPDATA%\Pitlane\config.json`. Logs are retained for 14 days under `%LOCALAPPDATA%\Pitlane\Logs`. On its first start Pitlane copies the configuration SimRigMode left in `%LOCALAPPDATA%\SimRigMode`, and leaves that folder as it was.
+## What it switches
 
-## First-time setup
+- **Screens.** Each mode has its own layout: which screens are on, where they sit, and their
+  resolution and refresh rate. After every switch Pitlane checks what Windows actually did, and
+  puts the previous layout back if it did not come out as intended.
+- **Apps.** Starts what a mode needs, like SimHub or your wheel software, and closes it again
+  when you leave.
+- **Sound.** Sets the default speakers and microphone for each mode.
+- **USB devices.** Turns individual USB devices on or off per mode. It stays off until you arm
+  it, and keyboards and mice are always protected.
+- **Rig power.** Switches the rig's smart plug through Home Assistant.
 
-1. Arrange the desktop monitors in Windows, then use **Desktop Mode → Capture Current Display Layout**.
-2. Power/connect the rig and arrange its monitors, then capture the **Sim Rig Mode** layout.
-3. In **USB Devices**, choose the desired action for each mode. Rules are saved but **inert**:
-   USB switching ships disarmed and must be armed explicitly in **Settings → Safety**. Device
-   changes use Windows Configuration Manager and request one narrowly scoped UAC elevation per
-   batch.
-4. Choose optional playback/recording defaults for each mode.
-5. Optionally, in **Integrations**, enter where Home Assistant runs, a long-lived access token and
-   the entity that powers the rig. The page checks the connection by reading the entity, and the
-   **Home Assistant control** switch turns it on and off without losing the three fields. The
-   token is protected with Windows DPAPI for the current user.
-6. Before the first real switch, turn on **Settings → Safety → Dry run transitions**, switch
-   once, and read **Settings → Diagnostics**. A dry run validates everything and calls no
-   mutating API, so it shows exactly what a real switch would do. It changes no display, audio
-   device, USB device, smart plug or app, and the mode on record stays as it was.
+## Screenshots
 
-Display captures preserve persistent monitor device paths, EDID identity, adapter device paths,
-exact timing rationals, resolution, refresh, orientation, position, and topology. There is no
-refresh-rate cap.
+<p align="center">
+  <img src="docs/images/overview.png" width="820" alt="Pitlane's main window: the active mode, the hold-to-switch toggle, and a summary of what each mode changes">
+  <br><sub>The main window: where you are, the same hold-to-switch toggle, and what each mode changes.</sub>
+</p>
 
-Captured adapter LUIDs and mode indices are deliberately **not** replayed. Windows allocates
-adapter LUIDs per boot, so a profile is re-resolved against the displays actually connected at
-the time of the switch - by monitor device path, then EDID identity, then adapter device path -
-and the submitted arrays are rebuilt from scratch. If a display in a profile is not connected, or
-two connected displays match it equally well, the switch is refused rather than guessed at.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/mode-sim-rig.png" alt="The Sim rig mode page">
+      <br><sub><b>A mode</b>, with its screens, USB devices, sound, apps and rig power in one place.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/displays.png" alt="The Displays page with the rig monitor selected and parked">
+      <br><sub><b>Displays</b>: every screen, the modes that use it, and parking for monitors that misbehave.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/apps.png" alt="The Apps page with MOZA Pit House, RaceHub and SimHub linked to Sim rig mode">
+      <br><sub><b>Apps</b> that start with a mode and close when you leave it.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/home-assistant.png" alt="The Home Assistant settings: host, access token and the switch that powers the rig">
+      <br><sub><b>Home Assistant</b>: an address, a token and the switch that powers the rig.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/flyout.png" alt="The tray flyout at rest">
+      <br><sub><b>The tray flyout</b>, one click on the tray icon away.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/settings.png" alt="Settings: USB switching, dry run, parked monitors, start with Windows and shortcuts">
+      <br><sub><b>Settings</b>: dry runs, Start with Windows, and keyboard shortcuts.</sub>
+    </td>
+  </tr>
+</table>
 
-## Build and test
+## Getting started
+
+### Requirements
+
+- A 64-bit Windows 11 PC.
+- Nothing else. Pitlane is a single file with everything built in: no installer and no runtimes.
+
+### Install
+
+1. Build `Pitlane.exe` as described in [Building from source](#building-from-source).
+2. Put it in a folder of your choice, like `C:\Tools\Pitlane`, and start it. Pitlane lives in the
+   notification area of the taskbar.
+3. To have it ready after every restart, right-click the tray icon and tick **Start with Windows**.
+
+### Set up your two modes
+
+1. **Desktop.** Arrange your desk screens in Windows' display settings. Open Pitlane (left-click
+   the tray icon, then **Open**), go to **Desktop mode** and click **Capture current layout**.
+2. **Sim Rig.** Arrange the screens the way you race, and capture the **Sim rig mode** layout the
+   same way. You can also choose screens one by one on the **Displays** page.
+3. **The extras, if you want them:**
+   - **Apps**: add the apps each mode should start.
+   - **Audio**: choose the default speakers and microphone for each mode.
+   - **Integrations**: enter your Home Assistant address, a long-lived access token and the switch
+     that powers the rig.
+   - **USB devices**: choose what happens to each device in each mode, then arm USB switching under
+     **Settings & diagnostics**.
+4. **Try it safely.** Under **Settings & diagnostics**, turn on **Dry run transitions** and switch
+   once: Pitlane checks everything and changes nothing. **Test switch without the displays**, under
+   Advanced, does everything except the screens.
+
+## Switching modes
+
+- **Left-click the tray icon** and **hold the switch for three seconds**. Let go earlier and nothing
+  happens. Space or Enter works too.
+- **Right-click the tray icon** to switch straight away, to turn Start with Windows on or off, or
+  to quit.
+- **Keyboard shortcuts**: turn on **Global shortcuts** in Settings to switch with Ctrl+Alt+D
+  (Desktop) and Ctrl+Alt+R (Sim Rig).
+- The tray icon shows where you are: **blue** in Desktop mode, **orange** in Sim Rig mode.
+
+During a switch Pitlane closes the apps of the mode you are leaving, sets up the screens and checks
+them, then sets the sound, USB devices and rig power, and starts the new mode's apps. If the screens
+do not come out as intended, it puts the previous layout back and tells you why.
+
+## Good to know
+
+<details>
+<summary><b>A monitor keeps disconnecting when it is not in use, and the PC stutters</b></summary>
+<br>
+
+Some monitors, especially on HDMI, drop off and reconnect every few seconds once Windows stops
+sending them a picture, and every reconnect makes the whole PC hitch. On the **Displays** page,
+select that monitor and turn on **Park when not in use**. Pitlane then keeps it connected but shows
+only black on it, in a corner the mouse does not reach, and moves any window that ends up there to
+your main screen. Its power light stays on; switch it off with its own power button if you like.
+When Pitlane sees a monitor dropping out again and again, it tells you.
+</details>
+
+<details>
+<summary><b>DisplayLink screens and USB docks</b></summary>
+<br>
+
+Screens on DisplayLink, USB docks and virtual displays are left on or off as they are when you
+switch. To have one follow your modes like any other screen, select it on the **Displays** page and
+turn on **Switch with modes**.
+</details>
+
+<details>
+<summary><b>Apps that run as administrator, or hide in the tray</b></summary>
+<br>
+
+Pitlane can start apps that run as administrator, but Windows does not let it close them. Apps
+that hide in the tray instead of closing are ended after a few seconds, unless you turn that off
+for them on the **Apps** page.
+</details>
+
+<details>
+<summary><b>Where are my settings and logs?</b></summary>
+<br>
+
+In `%LOCALAPPDATA%\Pitlane`: the settings in `config.json`, and the last 14 days of logs under
+`Logs`. **Settings & diagnostics** can export and import your configuration and open the logs.
+</details>
+
+## Privacy and safety
+
+- Pitlane runs entirely on your PC. The only thing it ever contacts is your own Home Assistant, if
+  you set it up.
+- The Home Assistant token is encrypted for your Windows account. It is sent over plain http only
+  to an address on your local network.
+- Nothing changes unless you switch. In the background Pitlane only listens for the tray icon,
+  your shortcuts and monitors dropping out. The one exception is a parked monitor, which it keeps
+  black and clear of windows.
+- Pitlane never touches Windows' own saved display settings and never sends commands to your
+  monitors. It asks for administrator rights only to switch USB devices, once per switch.
+
+The guarantees behind this, and the tests that hold the code to them, are in
+[docs/SAFETY.md](docs/SAFETY.md).
+
+## Building from source
+
+You need Windows and the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 
 ```powershell
-dotnet restore SimRigMode.csproj
-dotnet build SimRigMode.csproj -c Release
-dotnet test tests\SimRigMode.Tests\SimRigMode.Tests.csproj -c Release
 dotnet publish SimRigMode.csproj -c Release -r win-x64 --self-contained true -o dist
 ```
 
-### Layout
+This produces `dist\Pitlane.exe`. [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) covers the project
+layout, the tests and how the switching works under the hood.
 
-| Project | Kind | Purpose |
-|---|---|---|
-| `SimRigMode.csproj` | WinUI 3 `WinExe` | Tray app, settings window, composition root |
-| `SimRigMode.Core` | class library | Models, native interop, hardware-facing services |
-| `tests/SimRigMode.Tests` | xUnit | Hardware-free tests; references **Core only** |
+---
 
-`SimRigMode.Core` is a class library deliberately. A library emits no apphost, so
-referencing it can never place a runnable `Pitlane.exe` into a test output folder.
-The previous smoke-test project did exactly that, and reached the production `runas`
-elevation path through `Environment.ProcessPath`; see `docs/report.md`.
-`tests/Directory.Build.props` sets `UseAppHost=false` for everything under `tests/`
-and **fails the build** if a runnable binary ever reappears there.
-
-Tests must never touch real hardware. Nothing under `tests/` may call `SetDisplayConfig`,
-`CM_Enable_DevNode`/`CM_Disable_DevNode`, `IPolicyConfig`, or trigger elevation.
-
-Publishing is configured for a single, untrimmed, compressed, self-contained x64 executable using Windows App SDK 2.4.0 and stable Windows Community Toolkit settings controls. WinUI 3, COM interop, and native P/Invoke metadata are retained.
-
-## Safety and limitations
-
-**Displays**
-
-- Pitlane changes your displays only in a mode switch you start, and never writes Windows'
-  persistent display database: not in a switch, not from a button. Every switch validates first,
-  applies without `SDC_SAVE_TO_DATABASE`, re-queries to confirm the result, and rolls back if the
-  result does not match. Saved layouts are Windows' own, written by its Settings.
-- Indirect displays - DisplayLink, USB docks, virtual displays - are detected from their adapter
-  device path and are **carried through a mode switch untouched** by default. They are neither
-  removed nor re-added, because that is the operation implicated in the incident described in
-  `docs/report.md`. Note that output technology does not identify them: the device at the centre
-  of that incident reports LVDS.
-- A display step that fails or is rolled back aborts the transition instead of being logged as a
-  warning while the remaining steps run anyway.
-- Some monitors must never be detached. The PG27AQDP on HDMI drops off the bus and reconnects
-  every few seconds while detached, and every reconnect stalls Windows' input handling. That was
-  the real cause of the incidents in `docs/report.md`. Monitors on the park list
-  (**Displays → Park when not in use**) stay attached in a corner of the desktop, where the mouse
-  practically never reaches them. While parked they are kept black, and any window that lands
-  on one is moved to the main screen. Pitlane sends monitors no commands: switch
-  the screen off and on with its own power button.
-- A watchdog reports any monitor that keeps dropping out and says how to fix it. It never changes
-  your displays itself. If a monitor is left out of the layout and keeps dropping out, attach it
-  in Windows: **Settings → System → Display**, select it, and choose **Extend desktop to this
-  display**, or unplug its cable.
-- A mode switch can turn on monitors that are connected but currently out of the layout.
-
-**Apps**
-
-- **Settings → Apps** links programs to a mode. They start when the mode begins, unless they
-  are already running, and close when you switch to the other mode. The picker lists what is in
-  your Start menu and what is running, with sim racing tools first, so you rarely need to browse
-  for an .exe.
-- Closing first asks the app to close, like clicking its X. Many sim tools hide in the tray
-  instead, so an app still running a few seconds later is ended, unless you turn that off for it.
-- Apps that run as administrator can be started, but Pitlane cannot end them. A shortcut that
-  launches a helper, such as RaceHub's elevator, starts fine but cannot be closed by path.
-- Apps in an imported configuration never start until you turn them on.
-
-**USB devices**
-
-- USB switching ships **disarmed** and does nothing until armed in Settings.
-- Keyboards, mice, system-class devices, USB host controllers and root hubs are protected, and
-  protection propagates upward: a USB composite device with a keyboard behind it is protected even
-  though its own device class is plain `USB`. A hub with a protected device in its branch cannot
-  be disabled at all.
-- A rule that carries no usable device identity matches nothing. Imported and on-disk
-  configurations are sanitized before use.
-- The elevated helper validates every operation independently before touching a device, and
-  refuses anything that is not a `USB\` devnode. It cannot itself request elevation, and it
-  refuses to run unless it is the genuine Pitlane executable.
-- Enable/disable may still be refused by Windows, may require a reboot, or may be cancelled at
-  UAC. Nothing is applied unless the whole batch validates.
-
-**Other**
-
-- Outside a switch you start, Pitlane only listens: the tray icon, the global shortcuts
-  (`RegisterHotKey`, not a keyboard hook) and the display watchdog change nothing. Nothing starts
-  a switch automatically. See `docs/SAFETY.md`, invariant 15.
-- Audio default switching uses Windows' undocumented `IPolicyConfig` COM surface; it is probed for
-  availability and failures are isolated and reported.
-- The Home Assistant token goes over plain http only to an address on the local network, such as
-  homeassistant.local or 192.168.x.x. Anywhere else Pitlane insists on https.
-- A failed smart-plug power-on aborts a Sim Rig transition rather than continuing to devices that
-  may have no power.
+<sub>Pitlane was called SimRigMode until September 2026, and the code still uses that name.</sub>
