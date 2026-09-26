@@ -74,7 +74,7 @@ public static class DisplayIdentityMatcher
         if (byTarget.count == 1) return new(byTarget.match, DisplayMatchTier.TargetIdOnly, "matched by target id and output technology only");
         if (byTarget.count > 1) return Ambiguous(DisplayMatchTier.TargetIdOnly, byTarget.count);
 
-        return new(null, DisplayMatchTier.None, "this display is not currently connected");
+        return new(null, DisplayMatchTier.None, "this display is not currently connected (if it is switched off, turn it on and switch again)");
     }
 
     /// <summary>True when the two records describe the same physical display. Replaces the three

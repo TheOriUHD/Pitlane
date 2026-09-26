@@ -28,32 +28,75 @@ public sealed class DisplayService
     /// <summary>Bounded retries for the sizing/query race below.</summary>
     private const int CaptureAttempts = 5;
 
-    public DisplaySnapshot CaptureCurrent()
+    /// <summary>
+    /// GetDisplayConfigBufferSizes and QueryDisplayConfig are two separate calls. If the topology
+    /// changes between them - exactly what a dock, an indirect display or a monitor dropping off
+    /// the bus does - the query returns ERROR_INSUFFICIENT_BUFFER. Retry BOTH calls: a topology
+    /// that grew needs new sizes, not just a larger array.
+    /// </summary>
+    private static (N.DISPLAYCONFIG_PATH_INFO[] Paths, N.DISPLAYCONFIG_MODE_INFO[] Modes) Query(uint flags)
     {
-        // GetDisplayConfigBufferSizes and QueryDisplayConfig are two separate calls. If the
-        // topology changes between them - exactly what a dock or an indirect display does when
-        // it re-enumerates - the query returns ERROR_INSUFFICIENT_BUFFER. Retry BOTH calls: a
-        // topology that grew needs new sizes, not just a larger array.
-        uint pc = 0, mc = 0;
-        N.DISPLAYCONFIG_PATH_INFO[] paths;
-        N.DISPLAYCONFIG_MODE_INFO[] modes;
-        var attempt = 0;
-        while (true)
+        for (var attempt = 1; ; attempt++)
         {
-            attempt++;
-            var sizing = N.GetDisplayConfigBufferSizes(N.QDC_ONLY_ACTIVE_PATHS, out pc, out mc);
+            var sizing = N.GetDisplayConfigBufferSizes(flags, out var pathCount, out var modeCount);
             if (sizing != 0) throw new InvalidOperationException($"Display configuration sizing failed (Win32 {sizing}).");
-            paths = new N.DISPLAYCONFIG_PATH_INFO[pc];
-            modes = new N.DISPLAYCONFIG_MODE_INFO[mc];
-            var error = N.QueryDisplayConfig(N.QDC_ONLY_ACTIVE_PATHS, ref pc, paths, ref mc, modes, IntPtr.Zero);
-            if (error == 0) break;
+            var paths = new N.DISPLAYCONFIG_PATH_INFO[pathCount];
+            var modes = new N.DISPLAYCONFIG_MODE_INFO[modeCount];
+            var error = N.QueryDisplayConfig(flags, ref pathCount, paths, ref modeCount, modes, IntPtr.Zero);
+            if (error == 0) return (paths[..(int)pathCount], modes[..(int)modeCount]);
             if (error == N.ERROR_INSUFFICIENT_BUFFER && attempt < CaptureAttempts) continue;
             throw new InvalidOperationException($"Display configuration capture failed (Win32 {error}) after {attempt} attempt(s).");
         }
+    }
+
+    /// <summary>
+    /// Every monitor Windows can drive right now, including ones that are connected but switched
+    /// out of the layout. <see cref="CaptureCurrent"/> cannot see those, because it asks for
+    /// active paths only. Read-only.
+    /// </summary>
+    public IReadOnlyList<ConnectedTarget> CaptureConnectedTargets()
+    {
+        var (paths, _) = Query(N.QDC_ALL_PATHS);
+        var targets = new Dictionary<(long Adapter, uint Id), ConnectedTarget>();
+        var adapterPaths = new Dictionary<long, string>();
+        foreach (var p in paths)
+        {
+            if (!p.targetInfo.IsTargetAvailable) continue;
+            var adapter = p.targetInfo.adapterId.Value;
+            var key = (adapter, p.targetInfo.id);
+            if (!targets.TryGetValue(key, out var target))
+            {
+                var name = GetTargetName(p.targetInfo.adapterId, p.targetInfo.id);
+                if (!adapterPaths.TryGetValue(adapter, out var adapterPath))
+                    adapterPaths[adapter] = adapterPath = GetAdapterDevicePath(p.targetInfo.adapterId);
+                var verdict = IndirectDisplayDetector.Classify(adapterPath, p.targetInfo.outputTechnology);
+                targets[key] = target = new ConnectedTarget
+                {
+                    Adapter = adapter, TargetId = p.targetInfo.id,
+                    MonitorDevicePath = name.path,
+                    FriendlyName = string.IsNullOrWhiteSpace(name.friendly) ? $"Display {p.targetInfo.id}" : name.friendly,
+                    AdapterDevicePath = adapterPath,
+                    EdidManufactureId = name.edidManufactureId, EdidProductCodeId = name.edidProductCodeId,
+                    ConnectorInstance = name.connectorInstance, EdidIdsValid = name.edidIdsValid,
+                    OutputTechnology = p.targetInfo.outputTechnology,
+                    IsIndirect = verdict.IsIndirect, IndirectReason = verdict.Reason
+                };
+            }
+            if ((p.flags & N.DISPLAYCONFIG_PATH_ACTIVE) != 0) target.IsActive = true;
+            // Cross-adapter paths (hybrid graphics) are never used to switch a monitor on.
+            if (p.sourceInfo.adapterId.Value == adapter && !target.SourceIds.Contains(p.sourceInfo.id))
+                target.SourceIds.Add(p.sourceInfo.id);
+        }
+        return targets.Values.ToList();
+    }
+
+    public DisplaySnapshot CaptureCurrent()
+    {
+        var (paths, modes) = Query(N.QDC_ONLY_ACTIVE_PATHS);
         var result = new DisplaySnapshot();
         // One GET_ADAPTER_NAME per distinct adapter, not per path.
         var adapterPaths = new Dictionary<long, string>();
-        foreach (var p in paths.Take((int)pc))
+        foreach (var p in paths)
         {
             var target = GetTargetName(p.targetInfo.adapterId, p.targetInfo.id); var source = GetSourceName(p.sourceInfo.adapterId, p.sourceInfo.id);
             var adapterKey = p.targetInfo.adapterId.Value;
@@ -74,7 +117,7 @@ public sealed class DisplayService
                 FriendlyName = string.IsNullOrWhiteSpace(target.friendly) ? source : target.friendly, MonitorDevicePath = target.path, SourceName = source
             });
         }
-        foreach (var m in modes.Take((int)mc))
+        foreach (var m in modes)
         {
             var r = new DisplayModeRecord { InfoType = m.infoType, Id = m.id, Adapter = m.adapterId.Value };
             if (m.infoType == N.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE) { r.Width = m.sourceMode.width; r.Height = m.sourceMode.height; r.PixelFormat = m.sourceMode.pixelFormat; r.PositionX = m.sourceMode.position.x; r.PositionY = m.sourceMode.position.y; }
@@ -90,25 +133,16 @@ public sealed class DisplayService
     }
 
     /// <summary>
-    /// Re-applies the layout currently on screen and asks Windows to REMEMBER it. This is the
-    /// only place SDC_SAVE_TO_DATABASE is used, it is reachable only from an explicit button, and
-    /// mode switching never calls it. It exists so the persisted display database can be repaired
-    /// deliberately - including cleaning up what the incident wrote into it.
-    /// </summary>
-    public int PersistCurrentTopologyAsWindowsDefault()
-    {
-        var live = CaptureCurrent();
-        return Submit(live, N.SDC_USE_SUPPLIED_DISPLAY_CONFIG | N.SDC_APPLY | N.SDC_SAVE_TO_DATABASE | N.SDC_ALLOW_CHANGES);
-    }
-
-    /// <summary>
     /// Submits a topology and returns the raw Win32 result. The flags are supplied by the
     /// caller, which is what lets DisplayApplyEngine validate before it applies and roll back
-    /// afterwards. Note there is no overload that defaults to SDC_SAVE_TO_DATABASE: persisting
-    /// is a deliberate, separate user action now. See docs/report.md.
+    /// afterwards. SDC_SAVE_TO_DATABASE is refused outright: SimRigMode never writes Windows' own
+    /// display database, because what is written there outlives the app and the reboot, and
+    /// Windows re-applies it by itself. See docs/report.md.
     /// </summary>
     public int Submit(DisplaySnapshot snapshot, uint sdcFlags)
     {
+        if ((sdcFlags & N.SDC_SAVE_TO_DATABASE) != 0)
+            throw new InvalidOperationException($"{Product.Name} never saves a layout into Windows' display database.");
         if (snapshot.Paths.Count == 0) throw new InvalidOperationException("This mode has no captured display layout.");
         ValidateModeIndices(snapshot);
         var paths = snapshot.Paths.Select(p => new N.DISPLAYCONFIG_PATH_INFO

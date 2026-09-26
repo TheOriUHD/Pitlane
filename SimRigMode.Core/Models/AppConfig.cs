@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SimRigMode.Models;
@@ -7,7 +8,7 @@ public enum DeviceModeAction { DoNotChange, Enabled, Disabled }
 
 public sealed class AppConfig
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public WorkspaceMode CurrentMode { get; set; } = WorkspaceMode.Unknown;
     public ModeConfig Desktop { get; set; } = new() { Name = "Desktop Mode" };
     public ModeConfig SimRig { get; set; } = new() { Name = "Sim Rig Mode" };
@@ -21,6 +22,30 @@ public sealed class ModeConfig
     public string Name { get; set; } = "Mode";
     public DisplaySnapshot? Displays { get; set; }
     public AudioSelection Audio { get; set; } = new();
+
+    /// <summary>Apps started when this mode begins and, optionally, closed when it ends.</summary>
+    public List<LinkedApp> LinkedApps { get; set; } = [];
+}
+
+/// <summary>An app linked to a mode.</summary>
+public sealed class LinkedApp
+{
+    public string Name { get; set; } = "";
+
+    /// <summary>Full path of the program. Running copies are recognised by this path.</summary>
+    public string Path { get; set; } = "";
+
+    public string Arguments { get; set; } = "";
+
+    /// <summary>Started when the mode begins, unless it is already running.</summary>
+    public bool StartWithMode { get; set; } = true;
+
+    /// <summary>Closed when switching to the other mode.</summary>
+    public bool CloseWhenLeaving { get; set; } = true;
+
+    /// <summary>Ended if it has not closed a few seconds after being asked to. Many sim tools
+    /// hide in the tray when their window is closed, so asking alone would leave them running.</summary>
+    public bool ForceClose { get; set; } = true;
 }
 
 public sealed class GeneralConfig
@@ -54,16 +79,79 @@ public sealed class GeneralConfig
     /// disabled until the user explicitly arms the feature.
     /// </summary>
     public bool UsbSwitchingArmed { get; set; }
+
+    // ---- display power ---------------------------------------------------------------
+
+    /// <summary>
+    /// Monitors that are PARKED when a mode leaves them out: kept attached in a corner of the
+    /// desktop, never detached. SimRigMode does not switch them off; their own power button does.
+    /// (The name predates that and is kept so existing config files still load.)
+    ///
+    /// Detaching a connected monitor is not a neutral state. Measured on the PG27AQDP (HDMI):
+    /// detached, it drops off the bus and reconnects every 7.6 s, and every reconnect stalls
+    /// Windows' input and window handling. It did so switched on, in standby and switched off,
+    /// though not every time it was off. Attached, it never drops out. See docs/report.md.
+    /// </summary>
+    public List<DisplayPowerOffEntry> SwitchOffWhenUnused { get; set; } = [];
+
+    /// <summary>Monitors SimRigMode has parked right now. Runtime state, kept so that capturing a
+    /// layout can leave a parked monitor out instead of saving its parking spot as part of it.</summary>
+    public List<string> ParkedDisplays { get; set; } = [];
+
+    /// <summary>
+    /// Indirect displays (DisplayLink, a USB dock, a virtual display) the modes switch like any
+    /// other display, by monitor device path: on in the modes whose layout has them, off in the
+    /// others. Every other indirect display is carried through as it is. The user asked for the
+    /// Elgato Prompter to be off in Sim Rig mode on 2026-09-26.
+    /// </summary>
+    public List<string> SwitchedIndirectDisplays { get; set; } = [];
 }
 
+public sealed class DisplayPowerOffEntry
+{
+    /// <summary>\\?\DISPLAY#... - the same path DisplayConfigGetDeviceInfo and the monitor
+    /// device interface report.</summary>
+    public string MonitorDevicePath { get; set; } = "";
+    public string FriendlyName { get; set; } = "";
+
+    /// <summary>"user" when switched on from the Displays page, "watchdog" when SimRigMode saw
+    /// the monitor keep dropping out.</summary>
+    public string Reason { get; set; } = "";
+    public DateTime AddedUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Rig power through Home Assistant: a switch, where it runs, a long-lived access token, and the
+/// entity that powers the rig. A mode switch touches the rig's power only while the switch is on
+/// and all three are set.
+/// </summary>
 public sealed class IntegrationConfig
 {
-    public bool Enabled { get; set; }
-    public string OnWebhookUrl { get; set; } = "";
-    public string OffWebhookUrl { get; set; } = "";
-    public string BaseUrl { get; set; } = "";
-    public string EntityId { get; set; } = "";
+    /// <summary>The on/off switch. On by default, so filling in the three fields is enough; off
+    /// keeps them saved and leaves the rig's power alone. Also the key older files used for it.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>As typed: "homeassistant.local", "192.168.1.20:8123" or a full URL.</summary>
+    public string Host { get; set; } = "";
+
+    /// <summary>The long-lived access token, protected with DPAPI for this Windows user.</summary>
     public string ProtectedToken { get; set; } = "";
+
+    /// <summary>"switch.sim_rig", or any entity Home Assistant can turn on and off.</summary>
+    public string Entity { get; set; } = "";
+
+    /// <summary>Host, token and entity are all filled in.</summary>
+    [JsonIgnore]
+    public bool IsSetUp => !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(ProtectedToken) && !string.IsNullOrWhiteSpace(Entity);
+
+    /// <summary>Switched on and set up: only then does a mode switch touch the rig's power.</summary>
+    [JsonIgnore]
+    public bool IsActive => Enabled && IsSetUp;
+
+    /// <summary>Fields of the older settings - webhooks, BaseUrl, EntityId - as read from an older
+    /// file. ConfigurationService migrates them once; they are never written back.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Legacy { get; set; }
 }
 
 public sealed class UsbRule

@@ -28,7 +28,14 @@ public sealed class NoHardwareAccessFromTestsTests
         "CM_Enable_DevNode",
         "CM_Disable_DevNode",
         "SetDefaultEndpoint",
-        "PersistCurrentTopologyAsWindowsDefault"
+        // DDC/CI: sends a real monitor a command. The product must not have it either
+        // (WindowsOwnedStateTests); this keeps a test from bringing it back.
+        "SetVCPFeature",
+        // Starts and ends real programs.
+        "new SystemProcessController(",
+        // Moves the user's real windows, and puts a real window over a monitor.
+        "ParkedWindowMover.MoveOff",
+        "new ParkedScreenKeeper("
     ];
 
     private static string SourceDirectory([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
@@ -45,6 +52,7 @@ public sealed class NoHardwareAccessFromTestsTests
             if (file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") ||
                 file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")) continue;
             if (Path.GetFileName(file) == Path.GetFileName(ThisFile())) continue;   // this file lists them
+            if (Path.GetFileName(file) == Path.GetFileName(WindowsOwnedStateTests.ThisFile)) continue;   // so does the product scan
 
             var lines = File.ReadAllLines(file);
             for (var i = 0; i < lines.Length; i++)
@@ -72,6 +80,7 @@ public sealed class NoHardwareAccessFromTestsTests
         // tests/Directory.Build.props sets UseAppHost=false and fails the build if a runnable
         // binary appears under tests/. This is the runtime half of that guarantee.
         var image = Path.GetFileName(Environment.ProcessPath ?? "");
-        Assert.NotEqual("SimRigMode.exe", image);
+        Assert.NotEqual(Product.ExecutableFileName, image, StringComparer.OrdinalIgnoreCase);
+        Assert.NotEqual("SimRigMode.exe", image, StringComparer.OrdinalIgnoreCase);
     }
 }

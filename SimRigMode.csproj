@@ -5,7 +5,9 @@
     <UseWinUI>true</UseWinUI>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>SimRigMode</AssemblyName>
+    <AssemblyName>Pitlane</AssemblyName>
+    <Product>Pitlane</Product>
+    <AssemblyTitle>Pitlane</AssemblyTitle>
     <RootNamespace>SimRigMode</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -20,7 +22,7 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>embedded</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <ApplicationIcon>Assets\SimRigMode.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\Pitlane.ico</ApplicationIcon>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <!-- Program.cs provides Main so the elevated device worker can run before WinUI starts. -->
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
@@ -43,6 +45,8 @@
     <Page Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
     <ApplicationDefinition Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
     <PRIResource Remove="tests\**;tools\**;artifacts\**;dist\**;docs\**;SimRigMode.Core\**" />
+    <!-- The tray icon for each mode; App.LoadTrayIcons reads them by these names. -->
+    <EmbeddedResource Include="Assets\Tray\*.ico" LogicalName="Tray.%(Filename).ico" />
     <ProjectReference Include="SimRigMode.Core\SimRigMode.Core.csproj" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />

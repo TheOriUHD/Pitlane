@@ -1,0 +1,46 @@
+<UserControl
+    x:Class="SimRigMode.UI.HoldSwitch"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Height="64"
+    IsTabStop="True"
+    UseSystemFocusVisuals="False">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <!-- The labels are white, on the lit thumb and on the track alike, so the track stays
+                 dark: translucent over a dark page, solid graphite on a light one. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="HoldSwitchTrack" Color="#0DFFFFFF"/>
+                    <SolidColorBrush x:Key="HoldSwitchTrackStroke" Color="#16FFFFFF"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="HoldSwitchTrack" Color="#FF2B2F38"/>
+                    <SolidColorBrush x:Key="HoldSwitchTrackStroke" Color="#26000000"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid x:Name="Root" Background="Transparent">
+        <!-- The track. The lit thumb, its glow and its sheen are composition visuals in ThumbHost. -->
+        <Border x:Name="Track" CornerRadius="32" Background="{ThemeResource HoldSwitchTrack}" BorderBrush="{ThemeResource HoldSwitchTrackStroke}" BorderThickness="1"/>
+        <Grid x:Name="ThumbHost" IsHitTestVisible="False"/>
+
+        <Grid IsHitTestVisible="False">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <StackPanel x:Name="DesktopLabel" Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE7F4;" FontSize="16" Foreground="White"/>
+                <TextBlock Text="Desktop" FontSize="14" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel x:Name="RigLabel" Grid.Column="1" Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE804;" FontSize="16" Foreground="White"/>
+                <TextBlock Text="Sim Rig" FontSize="14" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

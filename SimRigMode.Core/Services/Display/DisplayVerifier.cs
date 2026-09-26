@@ -40,15 +40,27 @@ public static class DisplayVerifier
 
         // 1. Set equality of active displays. THIS is the assertion that would have caught the
         //    incident: "the Prompter left the active set" is a failure here, in both directions.
+        //    The exception is an indirect display that switches with the modes, or turns up
+        //    unasked: one that did not come on, or did not go off, is reported. An indirect display
+        //    never blocks a switch, and a slow DisplayLink display must not undo the whole layout.
+        var toleratedMissing = 0;
         foreach (var missing in expected.Paths.Where(path => !actual.Paths.Any(a => DisplayIdentityMatcher.SameDisplay(a, path))))
-            findings.Add(new(VerificationSeverity.Failure, missing.FriendlyName, "active",
+        {
+            var tolerated = missing.IsIndirect && missing.IndirectOptIn;
+            if (tolerated) toleratedMissing++;
+            findings.Add(new(tolerated ? VerificationSeverity.Warning : VerificationSeverity.Failure, missing.FriendlyName, "active",
                 "active", "not present in the resulting topology"));
+        }
 
+        var toleratedExtra = 0;
         foreach (var unexpected in actual.Paths.Where(path => !expected.Paths.Any(e => DisplayIdentityMatcher.SameDisplay(e, path))))
-            findings.Add(new(VerificationSeverity.Failure, unexpected.FriendlyName, "active",
+        {
+            if (unexpected.IsIndirect) toleratedExtra++;
+            findings.Add(new(unexpected.IsIndirect ? VerificationSeverity.Warning : VerificationSeverity.Failure, unexpected.FriendlyName, "active",
                 "not active", "active in the resulting topology"));
+        }
 
-        if (expected.Paths.Count != actual.Paths.Count)
+        if (expected.Paths.Count - toleratedMissing != actual.Paths.Count - toleratedExtra)
             findings.Add(new(VerificationSeverity.Failure, "(topology)", "display count",
                 expected.Paths.Count.ToString(), actual.Paths.Count.ToString()));
 
@@ -87,7 +99,10 @@ public static class DisplayVerifier
 
         // 3. Relative geometry. Absolute coordinates are NOT compared: Windows legitimately
         //    rebases the desktop origin, so only each display's offset from a shared anchor
-        //    display is meaningful.
+        //    display is meaningful. A display Windows placed somewhere else is reported, not
+        //    failed: Windows moves displays itself to settle overlaps, and a monitor a few pixels
+        //    off is not a failed switch. It used to roll back a whole switch for 33 pixels.
+        //    A missing display, a wrong resolution or a wrong rotation still fails it.
         findings.AddRange(CompareGeometry(expected, actual));
 
         return new(findings);
@@ -123,7 +138,7 @@ public static class DisplayVerifier
                                 actualMode.PositionY - actualAnchorMode.PositionY);
 
             if (expectedOffset != actualOffset)
-                yield return new(VerificationSeverity.Failure, expectedPath.FriendlyName, "position",
+                yield return new(VerificationSeverity.Warning, expectedPath.FriendlyName, "position",
                     $"{expectedOffset.Item1},{expectedOffset.Item2} relative to {anchor.expected.FriendlyName}",
                     $"{actualOffset.Item1},{actualOffset.Item2}");
         }

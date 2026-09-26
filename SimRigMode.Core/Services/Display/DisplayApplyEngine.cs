@@ -12,6 +12,10 @@ public interface IDisplayConfigGateway
     /// <summary>QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS), fully resolved.</summary>
     DisplaySnapshot CaptureActive();
 
+    /// <summary>QueryDisplayConfig(QDC_ALL_PATHS): every monitor Windows can drive, including
+    /// ones that are connected but switched out of the layout. Read-only.</summary>
+    IReadOnlyList<ConnectedTarget> CaptureConnected();
+
     /// <summary>SetDisplayConfig. Returns the Win32 result; 0 is success.</summary>
     int Submit(DisplaySnapshot snapshot, uint sdcFlags);
 }
@@ -39,7 +43,9 @@ public sealed record DisplayApplyOptions(
     int SettleMilliseconds = 750,
     int IndirectSettleMilliseconds = 3000,
     int VerifyRetries = 5,
-    int VerifyRetryDelayMilliseconds = 250);
+    int VerifyRetryDelayMilliseconds = 250,
+    Action? Applied = null,
+    IReadOnlyCollection<string>? SwitchedIndirect = null);
 
 public sealed record DisplayApplyOutcome(DisplayApplyStatus Status, string Summary, IReadOnlyList<string> Log)
 {
@@ -57,7 +63,7 @@ public sealed record DisplayApplyOutcome(DisplayApplyStatus Status, string Summa
 ///
 /// SDC_SAVE_TO_DATABASE is NEVER passed here. Every switch used to rewrite Windows' persistent
 /// display database, which is what made a transient mode switch outlive the process and the
-/// reboot. Persisting is now reachable only from an explicit user action.
+/// reboot. SimRigMode no longer persists anything there at all; DisplayService.Submit refuses it.
 ///
 /// The ROLLBACK IS VALIDATED FIRST. A rollback that has not been proven executable is not a
 /// rollback. If the topology currently on screen cannot even be expressed as a valid submission,
@@ -100,7 +106,13 @@ public sealed class DisplayApplyEngine
         log.Add("Rollback point captured and validated.");
 
         // ---- 2. Build the forward submission -----------------------------------------------
-        var forward = DisplaySubmissionBuilder.Build(profile, live);
+        // Without the connected-but-switched-out monitors, a profile that needs to switch a
+        // monitor ON is refused as "not connected". That made Sim Rig -> Desktop impossible.
+        IReadOnlyList<ConnectedTarget>? connected = null;
+        try { connected = _gateway.CaptureConnected(); }
+        catch (Exception ex) { log.Add("Connected monitors could not be listed (" + ex.Message + "); only displays that are already on can be used."); }
+
+        var forward = DisplaySubmissionBuilder.Build(profile, live, connected, options.SwitchedIndirect);
         log.AddRange(forward.Notes);
         if (forward.Submission is null)
             return Refuse(log, "This mode's display layout does not match the connected displays. " + Describe(forward.Issues));
@@ -133,6 +145,9 @@ public sealed class DisplayApplyEngine
             log.Add($"Apply failed (Win32 {applied}).");
             return await RollBackAsync(rollback, options, log, $"Windows rejected the layout (Win32 {applied}).", token);
         }
+        // The layout is in. Whatever waits on that, a parked monitor's cover, starts now rather
+        // than after the settle and the checks. It is never the engine's problem.
+        try { options.Applied?.Invoke(); } catch { /* the caller reports its own failures */ }
 
         // ---- 5. Settle, then verify --------------------------------------------------------
         var settle = forward.Submission.Paths.Any(path => path.IsIndirect)

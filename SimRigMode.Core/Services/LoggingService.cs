@@ -12,9 +12,9 @@ public sealed class LoggingService
 
     public LoggingService(string? baseDirectory = null)
     {
-        LogDirectory = baseDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SimRigMode", "Logs");
+        LogDirectory = baseDirectory ?? Path.Combine(Product.DataDirectory, "Logs");
         Directory.CreateDirectory(LogDirectory);
-        _path = Path.Combine(LogDirectory, $"SimRigMode-{DateTime.Now:yyyy-MM-dd}.log");
+        _path = Path.Combine(LogDirectory, $"{Product.Name}-{DateTime.Now:yyyy-MM-dd}.log");
         Cleanup();
     }
 

@@ -27,6 +27,9 @@
     recreating the hazard.
   -->
   <Target Name="FailIfRunnableBinaryInTestOutput" AfterTargets="Build">
+    <!-- Pitlane.exe since the rename on 2026-09-24; SimRigMode.exe before it. -->
+    <Error Condition="Exists('$(OutDir)Pitlane.exe')"
+           Text="A project under tests/ must never copy the production apphost. Found '$(OutDir)Pitlane.exe'. This is the condition that allowed the elevation recursion described in docs/report.md." />
     <Error Condition="Exists('$(OutDir)SimRigMode.exe')"
            Text="A project under tests/ must never copy the production apphost. Found '$(OutDir)SimRigMode.exe'. This is the condition that allowed the elevation recursion described in docs/report.md." />
     <Error Condition="'$(AssemblyName)' != '' And Exists('$(OutDir)$(AssemblyName).exe')"

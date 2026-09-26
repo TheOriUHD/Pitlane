@@ -7,7 +7,11 @@ public sealed class StartupService
 {
     private const string RunPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ApprovedPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
-    private const string ValueName = "SimRigMode";
+    private const string ValueName = Product.Name;
+
+    /// <summary>The Run value builds from before the rename wrote. Removed whenever the setting
+    /// is changed, so an old entry cannot start a stale SimRigMode.exe next to Pitlane.</summary>
+    private const string LegacyValueName = "SimRigMode";
 
     /// <summary>
     /// True only when the Run entry exists, points at THIS executable, and has not been disabled
@@ -56,6 +60,7 @@ public sealed class StartupService
         using var key = Registry.CurrentUser.CreateSubKey(RunPath);
         // VerifiedSelfPath, not Environment.ProcessPath: run from a test host the latter would
         // register the TEST binary to launch at every sign-in. Same hazard as the elevation path.
-        if (enabled) key.SetValue("SimRigMode", $"\"{ElevationGuard.VerifiedSelfPath}\" --startup"); else key.DeleteValue("SimRigMode", false);
+        if (enabled) key.SetValue(ValueName, $"\"{ElevationGuard.VerifiedSelfPath}\" --startup"); else key.DeleteValue(ValueName, false);
+        key.DeleteValue(LegacyValueName, false);
     }
 }

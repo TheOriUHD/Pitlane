@@ -110,7 +110,7 @@ public sealed class UsbDeviceService
     private static string DescribeWorkerExit(int exitCode) => exitCode switch
     {
         ElevatedWorkerExitCode.MalformedArguments => "The elevated helper rejected its payload. No device was changed.",
-        ElevatedWorkerExitCode.NotProductionImage => "The elevated helper refused to run because it is not the SimRigMode application. No device was changed.",
+        ElevatedWorkerExitCode.NotProductionImage => $"The elevated helper refused to run because it is not the {Product.Name} application. No device was changed.",
         ElevatedWorkerExitCode.SafetyDenied => "The elevated helper refused the request on safety grounds. No device was changed.",
         ElevatedWorkerExitCode.DeviceOperationFailed => "Windows could not change one or more devices. Some earlier devices in the batch may already have changed. A reboot may be required.",
         ElevatedWorkerExitCode.InternalError => "The elevated helper failed unexpectedly. No device is known to have changed.",

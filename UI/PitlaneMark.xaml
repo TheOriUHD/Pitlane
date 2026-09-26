@@ -1,0 +1,39 @@
+<UserControl
+    x:Class="SimRigMode.UI.PitlaneMark"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False">
+
+    <!-- The app icon, as vectors: the same geometry tools/IconBuilder draws on its 256 grid. -->
+    <Viewbox Stretch="Uniform">
+        <Canvas Width="256" Height="256">
+            <Rectangle Canvas.Left="12" Canvas.Top="12" Width="232" Height="232" RadiusX="56" RadiusY="56">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                        <GradientStop Color="#FF2E3340" Offset="0"/>
+                        <GradientStop Color="#FF0F1117" Offset="1"/>
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <Rectangle Canvas.Left="13" Canvas.Top="13" Width="230" Height="230" RadiusX="55" RadiusY="55" StrokeThickness="3">
+                <Rectangle.Stroke>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                        <GradientStop Color="#50FFFFFF" Offset="0"/>
+                        <GradientStop Color="#00FFFFFF" Offset="0.42"/>
+                    </LinearGradientBrush>
+                </Rectangle.Stroke>
+            </Rectangle>
+            <Path Data="M 89,145 L 129,145 A 38,38 0 0 0 129,69 L 89,69" StrokeThickness="30"
+                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round">
+                <Path.Stroke>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                        <GradientStop Color="#FFFF9248" Offset="0"/>
+                        <GradientStop Color="#FFFF5438" Offset="1"/>
+                    </LinearGradientBrush>
+                </Path.Stroke>
+            </Path>
+            <Line X1="89" Y1="69" X2="89" Y2="187" Stroke="#FFF6F8FC" StrokeThickness="30"
+                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+        </Canvas>
+    </Viewbox>
+</UserControl>

@@ -51,7 +51,7 @@ public static class IndirectDisplayDetector
         // does not manage this display"; the cost of a false negative is the incident.
         if (string.IsNullOrWhiteSpace(adapterDevicePath))
             return new(true, IndirectConfidence.Unknown,
-                "Windows did not report an adapter device path for this display, so SimRigMode " +
+                $"Windows did not report an adapter device path for this display, so {Product.Name} " +
                 "cannot confirm it is driven by a graphics card. It will be left untouched.");
 
         // An indirect output technology is decisive even on a PCI adapter path.

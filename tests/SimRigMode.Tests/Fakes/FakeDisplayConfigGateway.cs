@@ -11,10 +11,34 @@ namespace SimRigMode.Tests.Fakes;
 /// </summary>
 internal sealed class FakeDisplayConfigGateway : IDisplayConfigGateway
 {
-    public FakeDisplayConfigGateway(DisplaySnapshot current) => Current = current;
+    public FakeDisplayConfigGateway(DisplaySnapshot current)
+    {
+        Current = current;
+        // Everything on screen at the start stays connected when a layout switches it out -
+        // exactly like a real monitor that is merely left out of the layout.
+        _initiallyOn.AddRange(current.Paths.Select(path => path.ToConnected()));
+    }
 
-    /// <summary>What QueryDisplayConfig would return right now.</summary>
+    private readonly List<ConnectedTarget> _initiallyOn = [];
+
+    /// <summary>What QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS) would return right now.</summary>
     public DisplaySnapshot Current { get; set; }
+
+    /// <summary>Monitors that are plugged in but not part of the layout when the test starts.</summary>
+    public List<ConnectedTarget> SwitchedOut { get; } = [];
+
+    /// <summary>What QueryDisplayConfig(QDC_ALL_PATHS) would report: every connected monitor,
+    /// marked active when it is part of <see cref="Current"/>.</summary>
+    public IReadOnlyList<ConnectedTarget> CaptureConnected()
+    {
+        var all = _initiallyOn.Concat(SwitchedOut)
+            .GroupBy(target => target.MonitorDevicePath, StringComparer.OrdinalIgnoreCase)
+            .Select(group => JsonSerializer.Deserialize<ConnectedTarget>(JsonSerializer.Serialize(group.First()))!)
+            .ToList();
+        foreach (var target in all)
+            target.IsActive = Current.Paths.Any(path => path.MonitorDevicePath.Equals(target.MonitorDevicePath, StringComparison.OrdinalIgnoreCase));
+        return all;
+    }
 
     public List<uint> SubmittedFlags { get; } = [];
     public List<DisplaySnapshot> Submitted { get; } = [];

@@ -6,7 +6,7 @@ namespace SimRigMode.Services.Elevation;
 public sealed class ElevationRefusedException : InvalidOperationException
 {
     public ElevationRefusedException(string reason)
-        : base("SimRigMode refused to request elevation: " + reason) => Reason = reason;
+        : base(Product.Name + " refused to request elevation: " + reason) => Reason = reason;
 
     public string Reason { get; }
 }
@@ -46,8 +46,10 @@ public static class ElevationGuard
     /// <summary>Expected metadata value. A rename cannot forge this; it is compiled in.</summary>
     public const string ProductIdentityValue = "SimRigMode/elevation-protocol-1";
 
-    private const string ProductAssemblyName = "SimRigMode";
-    private const string ProductProcessFileName = "SimRigMode.exe";
+    // The executable was renamed to Pitlane on 2026-09-24. A leftover SimRigMode.exe carries the
+    // same metadata stamp, but neither this assembly name nor this file name, so it fails here.
+    private const string ProductAssemblyName = "Pitlane";
+    private const string ProductProcessFileName = Product.ExecutableFileName;
 
     /// <summary>
     /// True when this process is the production application image. <paramref name="reason"/>

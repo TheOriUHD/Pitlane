@@ -67,7 +67,7 @@ public sealed class AudioService
         catch (Exception ex)
         {
             throw new InvalidOperationException(
-                "This version of Windows does not expose the audio policy interface SimRigMode " +
+                $"This version of Windows does not expose the audio policy interface {Product.Name} " +
                 "uses to change default devices. Default audio devices were left unchanged.", ex);
         }
 

@@ -144,7 +144,7 @@ public static class ElevatedWorker
 
     private static int Fail(int code, string detail)
     {
-        try { Console.Error.WriteLine($"SimRigMode elevated worker ({code}): {detail}"); }
+        try { Console.Error.WriteLine($"{Product.Name} elevated worker ({code}): {detail}"); }
         catch { /* No console when launched hidden via ShellExecute; the exit code carries. */ }
         return code;
     }

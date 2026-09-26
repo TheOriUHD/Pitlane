@@ -9,8 +9,8 @@
 
         <Grid x:Name="AppTitleBar" Grid.Row="0" Height="40" Padding="16,0,0,0" Background="Transparent">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
-            <FontIcon Glyph="&#xE7FC;" FontSize="15" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
-            <TextBlock Grid.Column="1" Text="SimRigMode" Margin="9,0,0,0" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"/>
+            <ui:PitlaneMark Width="16" Height="16" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Text="Pitlane" Margin="9,0,0,0" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"/>
         </Grid>
 
         <NavigationView x:Name="Navigation" Grid.Row="1"
@@ -19,8 +19,8 @@
             ExpandedModeThresholdWidth="1000" SelectionChanged="Navigation_SelectionChanged">
             <NavigationView.PaneHeader>
                 <StackPanel Orientation="Horizontal" Spacing="10" Margin="2,8,0,12">
-                    <FontIcon Glyph="&#xE7FC;" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
-                    <TextBlock Text="SimRigMode" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center"/>
+                    <ui:PitlaneMark Width="22" Height="22" VerticalAlignment="Center"/>
+                    <TextBlock Text="Pitlane" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center"/>
                 </StackPanel>
             </NavigationView.PaneHeader>
             <NavigationView.MenuItems>
@@ -31,6 +31,7 @@
                 <NavigationViewItem Content="Displays" Tag="displays"><NavigationViewItem.Icon><FontIcon Glyph="&#xE7F4;"/></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="USB devices" Tag="usb"><NavigationViewItem.Icon><FontIcon Glyph="&#xECF0;"/></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="Audio" Tag="audio"><NavigationViewItem.Icon><FontIcon Glyph="&#xE767;"/></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Apps" Tag="apps"><NavigationViewItem.Icon><FontIcon Glyph="&#xE71D;"/></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="Integrations" Tag="integrations"><NavigationViewItem.Icon><FontIcon Glyph="&#xE774;"/></NavigationViewItem.Icon></NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
@@ -41,51 +42,72 @@
                 <!-- Overview -->
                 <ScrollViewer x:Name="OverviewPage" VerticalScrollBarVisibility="Auto">
                     <StackPanel Style="{StaticResource PageStackStyle}">
-                        <StackPanel Spacing="4"><TextBlock Text="Overview" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Switch workspaces and review configuration at a glance." Style="{StaticResource BodyTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
                         <InfoBar x:Name="OverviewInfoBar" IsOpen="False" IsClosable="True"/>
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Current mode" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                            <ct:SettingsCard x:Name="CurrentModeCard" Header="Mode not selected" Description="Choose a workspace to begin.">
-                                <ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE73E;"/></ct:SettingsCard.HeaderIcon>
-                                <Border Width="10" Height="10" CornerRadius="5" Background="{ThemeResource AccentFillColorDefaultBrush}"/>
-                            </ct:SettingsCard>
-                        </StackPanel>
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Workspace" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                            <StackPanel Spacing="8">
-                                <ct:SettingsCard x:Name="DesktopWorkspaceCard" Header="Desktop mode" Description="No display profile captured">
-                                    <ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7F4;"/></ct:SettingsCard.HeaderIcon>
-                                    <Button x:Name="DesktopSwitchButton" Content="Switch" Click="DesktopSwitch_Click"/>
-                                </ct:SettingsCard>
-                                <ct:SettingsCard x:Name="RigWorkspaceCard" Header="Sim rig mode" Description="No display profile captured">
-                                    <ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE768;"/></ct:SettingsCard.HeaderIcon>
-                                    <Button x:Name="RigSwitchButton" Content="Switch" Click="RigSwitch_Click" Style="{StaticResource AccentButtonStyle}"/>
-                                </ct:SettingsCard>
+
+                        <!-- The mode, and the one switch that changes it. -->
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="560"/><ColumnDefinition Width="0"/></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Grid Width="10" Height="10" VerticalAlignment="Center">
+                                    <Ellipse x:Name="OverviewHalo" Width="10" Height="10" Fill="#FF34D399" Opacity="0.3"/>
+                                    <Ellipse x:Name="OverviewDot" Width="6" Height="6" Fill="#FF34D399"/>
+                                </Grid>
+                                <TextBlock x:Name="OverviewStatus" Text="Active" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                                <Border x:Name="OverviewDryRun" Visibility="Collapsed" Margin="2,0,0,0" VerticalAlignment="Center" CornerRadius="8" Padding="7,1" Background="#1FFFB547" BorderBrush="#40FFB547" BorderThickness="1">
+                                    <TextBlock x:Name="OverviewDryRunText" Text="Dry run" FontSize="11" FontWeight="SemiBold" Foreground="#FFE0A33A"/>
+                                </Border>
                             </StackPanel>
+                            <TextBlock x:Name="OverviewMode" Text="Desktop" FontSize="40" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display" CharacterSpacing="-10"/>
+                            <ui:HoldSwitch x:Name="OverviewSwitch" Margin="0,18,0,0"/>
+                            <Grid Margin="4,12,0,0" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="OverviewCaption" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                <HyperlinkButton x:Name="OverviewCancel" Grid.Column="1" Content="Cancel" Visibility="Collapsed" Padding="6,2" FontSize="12" Click="CancelTransition_Click"/>
+                            </Grid>
+                            <StackPanel x:Name="OverviewSteps" Spacing="6" Margin="4,12,0,0" Visibility="Collapsed"/>
                         </StackPanel>
-                        <StackPanel x:Name="TransitionPanel" Spacing="10" Visibility="Collapsed">
-                            <Grid><TextBlock x:Name="TransitionTitle" Style="{StaticResource SubtitleTextBlockStyle}"/><Button x:Name="CancelTransitionButton" Content="Cancel" HorizontalAlignment="Right" Click="CancelTransition_Click"/></Grid>
-                            <ProgressBar x:Name="TransitionProgress" IsIndeterminate="True"/>
-                            <ItemsControl x:Name="TransitionSteps"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Margin="8,3" Style="{StaticResource BodyTextBlockStyle}"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                        </StackPanel>
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Configuration" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                            <ct:SettingsCard x:Name="DesktopReadinessCard" Header="Desktop display profile" Description="Not captured"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE73E;"/></ct:SettingsCard.HeaderIcon></ct:SettingsCard>
-                            <ct:SettingsCard x:Name="RigReadinessCard" Header="Sim rig display profile" Description="Not captured"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE73E;"/></ct:SettingsCard.HeaderIcon></ct:SettingsCard>
-                            <ct:SettingsCard x:Name="IntegrationReadinessCard" Header="Home Assistant power control" Description="Disabled"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE774;"/></ct:SettingsCard.HeaderIcon></ct:SettingsCard>
-                        </StackPanel>
+                        </Grid>
+
+                        <!-- What each mode does when you switch to it. -->
+                        <Grid Margin="0,20,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="760"/><ColumnDefinition Width="0"/></Grid.ColumnDefinitions>
+                        <Grid x:Name="ModeCards" ColumnSpacing="16" RowSpacing="16" SizeChanged="ModeCards_SizeChanged">
+                            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <Border x:Name="DesktopSummary" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="18,14,18,16">
+                                <StackPanel Spacing="12">
+                                    <Grid>
+                                        <TextBlock x:Name="DesktopSummaryTitle" Text="DESKTOP" FontSize="11" FontWeight="SemiBold" CharacterSpacing="80" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                                        <HyperlinkButton Content="Edit" Tag="desktop" Click="NavigateButton_Click" HorizontalAlignment="Right" Padding="6,0" FontSize="12" Margin="0,0,-6,0"/>
+                                    </Grid>
+                                    <StackPanel x:Name="DesktopSummaryRows" Spacing="10"/>
+                                </StackPanel>
+                            </Border>
+                            <Border x:Name="RigSummary" Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="18,14,18,16">
+                                <StackPanel Spacing="12">
+                                    <Grid>
+                                        <TextBlock x:Name="RigSummaryTitle" Text="SIM RIG" FontSize="11" FontWeight="SemiBold" CharacterSpacing="80" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                                        <HyperlinkButton Content="Edit" Tag="simrig" Click="NavigateButton_Click" HorizontalAlignment="Right" Padding="6,0" FontSize="12" Margin="0,0,-6,0"/>
+                                    </Grid>
+                                    <StackPanel x:Name="RigSummaryRows" Spacing="10"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                        </Grid>
                     </StackPanel>
                 </ScrollViewer>
 
                 <!-- Desktop mode -->
                 <ScrollViewer x:Name="DesktopPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                     <StackPanel Style="{StaticResource PageStackStyle}">
-                        <StackPanel Spacing="4"><TextBlock Text="Desktop mode" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Everything SimRigMode restores when you return to your desktop workspace." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+                        <StackPanel Spacing="4"><TextBlock Text="Desktop mode" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Everything Pitlane restores when you return to your desktop workspace." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
                         <InfoBar x:Name="DesktopInfoBar" IsOpen="False" IsClosable="True"/>
                         <TextBlock Text="Workspace profile" Style="{StaticResource BodyStrongTextBlockStyle}"/>
                         <ct:SettingsCard x:Name="DesktopDisplayCard" Header="Display layout" Description="No profile captured"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7F4;"/></ct:SettingsCard.HeaderIcon><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Capture current layout" Click="CaptureDesktop_Click"/><Button Content="Choose displays" Tag="desktop" Click="ChooseDisplays_Click"/></StackPanel></ct:SettingsCard>
                         <ct:SettingsCard x:Name="DesktopUsbCard" Header="USB policy" Description="No device rules"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xECF0;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="usb" Click="NavigateButton_Click"/></ct:SettingsCard>
                         <ct:SettingsCard x:Name="DesktopAudioCard" Header="Audio policy" Description="Do not change"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE767;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="audio" Click="NavigateButton_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="DesktopAppsCard" Header="Apps" Description="No apps linked"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE71D;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="apps" Click="NavigateButton_Click"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Apply this workspace" Description="Run the complete Desktop mode transition now."><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE72C;"/></ct:SettingsCard.HeaderIcon><Button Content="Apply" Click="DesktopSwitch_Click" Style="{StaticResource AccentButtonStyle}"/></ct:SettingsCard>
                         <TextBlock Text="Transition" Style="{StaticResource BodyStrongTextBlockStyle}"/>
                         <ct:SettingsExpander Header="Timing" Description="Delays used while returning to Desktop mode">
@@ -104,6 +126,7 @@
                         <ct:SettingsCard x:Name="RigDisplayCard" Header="Display layout" Description="No profile captured"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7F4;"/></ct:SettingsCard.HeaderIcon><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Capture current layout" Click="CaptureRig_Click"/><Button Content="Choose displays" Tag="simrig" Click="ChooseDisplays_Click"/></StackPanel></ct:SettingsCard>
                         <ct:SettingsCard x:Name="RigUsbCard" Header="USB policy" Description="No device rules"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xECF0;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="usb" Click="NavigateButton_Click"/></ct:SettingsCard>
                         <ct:SettingsCard x:Name="RigAudioCard" Header="Audio policy" Description="Do not change"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE767;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="audio" Click="NavigateButton_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="RigAppsCard" Header="Apps" Description="No apps linked"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE71D;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="apps" Click="NavigateButton_Click"/></ct:SettingsCard>
                         <ct:SettingsCard x:Name="RigPowerCard" Header="Rig power" Description="Home Assistant integration disabled"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><Button Content="Configure" Tag="integrations" Click="NavigateButton_Click"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Apply this workspace" Description="Run the complete Sim rig mode transition now."><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE72C;"/></ct:SettingsCard.HeaderIcon><Button Content="Apply" Click="RigSwitch_Click" Style="{StaticResource AccentButtonStyle}"/></ct:SettingsCard>
                         <TextBlock Text="Transition" Style="{StaticResource BodyStrongTextBlockStyle}"/>
@@ -135,6 +158,8 @@
                         </ct:SettingsExpander>
                         <ct:SettingsCard Header="Desktop mode" Description="Use this display in the Desktop workspace"><ToggleSwitch x:Name="DisplayDesktopEnabled" Toggled="DisplayModeToggle_Toggled"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Sim rig mode" Description="Use this display in the Sim rig workspace"><ToggleSwitch x:Name="DisplayRigEnabled" Toggled="DisplayModeToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="DisplayPowerOffCard" Header="Park when not in use" Description="When a mode leaves this monitor out, Pitlane keeps it attached in a corner of the desktop instead of detaching it. Use it for a monitor that keeps dropping out and reconnecting when detached. Switch its screen off with its own power button."><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="DisplayPowerOffToggle" Toggled="DisplayPowerOffToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="DisplaySwitchedCard" Visibility="Collapsed" Header="Switch with modes" Description="An indirect display, like DisplayLink or a USB dock, is left on or off as it is when switching modes. Turn this on to switch it like any other display: on in the modes that use it, above, and off in the others."><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE8AB;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="DisplaySwitchedToggle" Toggled="DisplaySwitchedToggle_Toggled"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Resolution" Description="Exact value in the active native topology"><ComboBox x:Name="DisplayResolutionCombo" MinWidth="180" IsEnabled="False"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Refresh rate" Description="Native rational timing; no artificial limit"><ComboBox x:Name="DisplayRefreshCombo" MinWidth="180" IsEnabled="False"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Orientation and primary" Description="Captured with each complete layout"><ComboBox x:Name="DisplayOrientationCombo" MinWidth="180" IsEnabled="False"/></ct:SettingsCard>
@@ -173,23 +198,33 @@
                     </StackPanel>
                 </ScrollViewer>
 
+                <!-- Apps -->
+                <ScrollViewer x:Name="AppsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Style="{StaticResource PageStackStyle}">
+                        <StackPanel Spacing="4"><TextBlock Text="Apps" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Start apps when a mode begins, and close them when you switch to the other mode." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/></StackPanel>
+                        <InfoBar x:Name="AppsInfoBar" IsOpen="False" IsClosable="True"/>
+                        <Grid><TextBlock Text="Sim rig mode" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center"/><Button Content="Add app" Tag="simrig" Click="AddApp_Click" HorizontalAlignment="Right" Style="{StaticResource AccentButtonStyle}"/></Grid>
+                        <StackPanel x:Name="SimRigAppsPanel" Spacing="4"/>
+                        <Grid Margin="0,10,0,0"><TextBlock Text="Desktop mode" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center"/><Button Content="Add app" Tag="desktop" Click="AddApp_Click" HorizontalAlignment="Right"/></Grid>
+                        <StackPanel x:Name="DesktopAppsPanel" Spacing="4"/>
+                        <TextBlock Text="An app that is already running is not started twice. Closing asks the app to close, like clicking its X. Many sim tools hide in the tray instead of exiting, so they are ended if they are still running a few seconds later. Apps that run as administrator can be started, but Pitlane cannot end them." Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </ScrollViewer>
+
                 <!-- Integrations -->
                 <ScrollViewer x:Name="IntegrationsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                     <StackPanel Style="{StaticResource PageStackStyle}">
-                        <StackPanel Spacing="4"><TextBlock Text="Integrations" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Optionally control rig power through Home Assistant." Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel>
+                        <StackPanel Spacing="4"><TextBlock Text="Integrations" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="Let Home Assistant turn the rig's power on and off when you switch modes." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/></StackPanel>
                         <InfoBar x:Name="IntegrationInfoBar" IsOpen="False" IsClosable="True"/>
-                        <ct:SettingsCard Header="Home Assistant power control" Description="Turn rig hardware on and off during transitions"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="IntegrationToggle" Toggled="IntegrationToggle_Toggled"/></ct:SettingsCard>
-                        <ct:SettingsExpander x:Name="IntegrationExpander" Header="Connection settings" Description="Use webhooks, or the REST API when webhook URLs are empty">
-                            <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE774;"/></ct:SettingsExpander.HeaderIcon>
-                            <ct:SettingsExpander.Items>
-                                <ct:SettingsCard Header="ON webhook" Description="HTTP POST URL used before entering Sim rig mode"><TextBox x:Name="OnWebhookText" Width="380" PlaceholderText="https://…"/></ct:SettingsCard>
-                                <ct:SettingsCard Header="OFF webhook" Description="HTTP POST URL used after entering Desktop mode"><TextBox x:Name="OffWebhookText" Width="380" PlaceholderText="https://…"/></ct:SettingsCard>
-                                <ct:SettingsCard Header="Home Assistant URL" Description="Base URL for REST API mode"><TextBox x:Name="HaBaseUrlText" Width="380" PlaceholderText="http://homeassistant.local:8123"/></ct:SettingsCard>
-                                <ct:SettingsCard Header="Entity ID" Description="Switch entity used for rig power"><TextBox x:Name="HaEntityText" Width="280" PlaceholderText="switch.sim_rig"/></ct:SettingsCard>
-                                <ct:SettingsCard Header="Access token" Description="Protected with Windows DPAPI for this user"><PasswordBox x:Name="HaTokenBox" Width="300" PlaceholderText="Leave blank to keep the saved token"/></ct:SettingsCard>
-                            </ct:SettingsExpander.Items>
-                        </ct:SettingsExpander>
-                        <Grid x:Name="IntegrationActions"><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Test ON" Click="TestOn_Click"/><Button Content="Test OFF" Click="TestOff_Click"/></StackPanel><Button Content="Save integration" HorizontalAlignment="Right" Click="SaveIntegration_Click" Style="{StaticResource AccentButtonStyle}"/></Grid>
+                        <ct:SettingsCard Header="Home Assistant control" Description="Turn the rig's power on and off during a switch"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE80F;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="IntegrationToggle" Toggled="IntegrationToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Host" Description="Where Home Assistant runs"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE774;"/></ct:SettingsCard.HeaderIcon><TextBox x:Name="HaHostText" Width="300" PlaceholderText="homeassistant.local" LostFocus="Integration_LostFocus" KeyDown="Integration_KeyDown"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Access token" Description="A long-lived access token, from your Home Assistant profile under Security"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE72E;"/></ct:SettingsCard.HeaderIcon><PasswordBox x:Name="HaTokenBox" Width="300" LostFocus="Integration_LostFocus" KeyDown="Integration_KeyDown"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Entity" Description="The switch that powers the rig"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><TextBox x:Name="HaEntityText" Width="300" PlaceholderText="switch.sim_rig" LostFocus="Integration_LostFocus" KeyDown="Integration_KeyDown"/></ct:SettingsCard>
+                        <Grid Margin="4,2,0,0" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <FontIcon x:Name="IntegrationStatusIcon" FontSize="14" VerticalAlignment="Top" Margin="0,3,0,0"/>
+                            <TextBlock x:Name="IntegrationStatusText" Grid.Column="1" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </Grid>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -201,9 +236,9 @@
                         <TextBlock Text="Safety" Style="{StaticResource BodyStrongTextBlockStyle}"/>
                         <ct:SettingsCard x:Name="UsbArmedCard" Header="Arm USB device switching" Description="While disarmed, USB rules are saved and shown but no device is ever enabled or disabled"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7BA;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="UsbArmedToggle" Toggled="UsbArmedToggle_Toggled"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Dry run transitions" Description="Validate and log exactly what a switch would do, without changing anything"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE9D9;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="DryRunToggle" Toggled="DryRunToggle_Toggled"/></ct:SettingsCard>
-                        <ct:SettingsCard Header="Set current layout as Windows default" Description="Writes the layout on screen right now into Windows' display database. Mode switching never does this."><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7F4;"/></ct:SettingsCard.HeaderIcon><Button Content="Set as Windows default" Click="PersistDisplayDefault_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard x:Name="PowerOffListCard" Header="Monitors parked when not in use" Description="None"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><Button x:Name="ClearPowerOffListButton" Content="Clear list" Click="ClearPowerOffList_Click"/></ct:SettingsCard>
                         <TextBlock Text="General" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,10,0,0"/>
-                        <ct:SettingsCard Header="Start with Windows" Description="Launch SimRigMode when you sign in"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="StartupToggle" Toggled="StartupToggle_Toggled"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Start with Windows" Description="Launch Pitlane when you sign in"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7E8;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="StartupToggle" Toggled="StartupToggle_Toggled"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Global shortcuts" Description="Switch modes without opening the tray menu"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE765;"/></ct:SettingsCard.HeaderIcon><ToggleSwitch x:Name="HotkeysToggle" Toggled="HotkeysToggle_Toggled"/></ct:SettingsCard>
                         <ct:SettingsExpander x:Name="HotkeysExpander" Header="Shortcut keys" Description="Use combinations such as Ctrl+Alt+D">
                             <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE765;"/></ct:SettingsExpander.HeaderIcon>
@@ -212,15 +247,25 @@
                         <TextBlock Text="Configuration" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,10,0,0"/>
                         <ct:SettingsCard Header="Export configuration" Description="Save a portable JSON backup"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE74E;"/></ct:SettingsCard.HeaderIcon><Button Content="Export" Click="Export_Click"/></ct:SettingsCard>
                         <ct:SettingsCard Header="Import configuration" Description="Restore settings from a JSON backup"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE8B5;"/></ct:SettingsCard.HeaderIcon><Button Content="Import" Click="Import_Click"/></ct:SettingsCard>
-                        <ct:SettingsCard Header="Reset SimRigMode" Description="Remove captured profiles and return all settings to defaults"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE777;"/></ct:SettingsCard.HeaderIcon><Button Content="Reset" Click="Reset_Click"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Reset Pitlane" Description="Remove captured profiles and return all settings to defaults"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE777;"/></ct:SettingsCard.HeaderIcon><Button Content="Reset" Click="Reset_Click"/></ct:SettingsCard>
                         <Button Content="Save general settings" HorizontalAlignment="Right" Click="SaveGeneral_Click" Style="{StaticResource AccentButtonStyle}"/>
+                        <TextBlock Text="Advanced" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,10,0,0"/>
+                        <ct:SettingsCard Header="Test switch without the displays" Description="Runs everything a switch does except the displays: apps, Home Assistant, audio and USB. The displays, and the mode Pitlane shows, stay as they are. Toggle alternates between the two; Sim Rig and Desktop run that mode's steps.">
+                            <ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xEC7A;"/></ct:SettingsCard.HeaderIcon>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="TestToggleButton" Content="Toggle" Tag="toggle" Click="TestSwitch_Click"/>
+                                <Button x:Name="TestRigButton" Content="Sim Rig" Tag="simrig" Click="TestSwitch_Click"/>
+                                <Button x:Name="TestDesktopButton" Content="Desktop" Tag="desktop" Click="TestSwitch_Click"/>
+                            </StackPanel>
+                        </ct:SettingsCard>
+                        <TextBlock x:Name="TestSwitchStatus" Visibility="Collapsed" Margin="4,0,0,0" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         <TextBlock Text="Diagnostics" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,10,0,0"/>
                         <ct:SettingsCard Header="Log files" Description="Open the local diagnostics folder"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xED25;"/></ct:SettingsCard.HeaderIcon><Button Content="Open logs" Click="OpenLogs_Click"/></ct:SettingsCard>
                         <ct:SettingsExpander Header="Recent diagnostic log" Description="Technical events from the current and recent sessions">
                             <ct:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE9D9;"/></ct:SettingsExpander.HeaderIcon>
                             <ct:SettingsExpander.Items><ct:SettingsCard Header="Latest entries"><TextBox x:Name="DiagnosticsText" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Mono" MinHeight="220" MaxHeight="400" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"/></ct:SettingsCard></ct:SettingsExpander.Items>
                         </ct:SettingsExpander>
-                        <ct:SettingsCard Header="SimRigMode" Description="Unpackaged, self-contained WinUI 3 utility"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE946;"/></ct:SettingsCard.HeaderIcon><TextBlock x:Name="VersionText"/></ct:SettingsCard>
+                        <ct:SettingsCard Header="Pitlane" Description="Unpackaged, self-contained WinUI 3 utility"><ct:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE946;"/></ct:SettingsCard.HeaderIcon><TextBlock x:Name="VersionText"/></ct:SettingsCard>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

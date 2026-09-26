@@ -41,8 +41,10 @@ internal static class DisplayConfigNative
 
     /// <summary>
     /// Writes the resulting topology into Windows' persistent display database. Every mode switch
-    /// used to pass this. It is now reachable only from the explicit "Set as Windows default"
-    /// action - never from an automatic transition. See docs/report.md.
+    /// used to pass this, and what it wrote outlived the app and the reboot. SimRigMode never
+    /// passes it: DisplayService.Submit refuses it, and WindowsOwnedStateTests fails if anything
+    /// else in the product names it. Declared only so the refusal can test for it.
+    /// See docs/report.md.
     /// </summary>
     internal const uint SDC_SAVE_TO_DATABASE = 0x200;
 

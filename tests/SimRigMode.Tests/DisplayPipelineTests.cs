@@ -353,7 +353,7 @@ public sealed class DisplayPipelineTests
     }
 
     [Fact]
-    public void Verifier_IgnoresAbsoluteOriginShiftsButCatchesRelativeMoves()
+    public void Verifier_IgnoresOriginShifts_AndReportsRelativeMovesWithoutFailing()
     {
         // Same relative arrangement, whole desktop rebased: that is Windows being Windows.
         var expected = TopologyFixture.Empty()
@@ -364,10 +364,113 @@ public sealed class DisplayPipelineTests
             .With("B", "pathB", TopologyFixture.GpuAdapterPath, 1, 1, 101, 1920, 1080, 0, 0);
         Assert.True(DisplayVerifier.Verify(expected, shifted).Passed);
 
-        // Genuinely rearranged: B moved from the right of A to the left.
+        // Genuinely rearranged: B moved from the right of A to the left. Reported, but not a
+        // failure: Windows moves displays itself, and a switch is not undone for a position.
         var moved = TopologyFixture.Empty()
             .With("A", "pathA", TopologyFixture.GpuAdapterPath, 1, 0, 100, 1920, 1080, 0, 0)
             .With("B", "pathB", TopologyFixture.GpuAdapterPath, 1, 1, 101, 1920, 1080, -1920, 0);
-        Assert.False(DisplayVerifier.Verify(expected, moved).Passed);
+        var report = DisplayVerifier.Verify(expected, moved);
+        Assert.True(report.Passed);
+        Assert.Contains(report.Findings, finding => finding.Field == "position" && finding.Severity == VerificationSeverity.Warning);
+    }
+
+    [Fact]
+    public void ACarriedDisplay_ThatWouldOverlapTheNewLayout_IsMovedClearTheShortestWay()
+    {
+        // 2026-09-26: the Desktop layout, captured before the Prompter was plugged back in, puts
+        // the 27G2WG3 at y 567; the Prompter, carried through at -1024,0, reaches down to y 600.
+        const string sidePath = @"\\?\DISPLAY#AOC2702#5&1176aab&0&UID4353#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        var profile = TopologyFixture.Empty().WithDeskMonitor()
+            .With("27G2WG3-", sidePath, TopologyFixture.GpuAdapterPath, TopologyFixture.GpuAdapter, 2, 4353, 1920, 1080, -1920, 567);
+        var live = TopologyFixture.Empty().WithDeskMonitor()
+            .With("27G2WG3-", sidePath, TopologyFixture.GpuAdapterPath, TopologyFixture.GpuAdapter, 2, 4353, 1920, 1080, -1920, 600)
+            .WithPrompter();
+
+        var result = DisplaySubmissionBuilder.Build(profile, live);
+
+        var submission = Assert.IsType<DisplaySnapshot>(result.Submission);
+        var prompter = submission.Paths.Single(path => path.FriendlyName == "Elgato Prom.");
+        var mode = submission.Modes[(int)prompter.SourceModeInfoIdx];
+        Assert.Equal((-1024, -33), (mode.PositionX, mode.PositionY));   // up 33, not across the desk
+        Assert.Contains(result.Notes, note => note.StartsWith("Elgato Prom.: moved 0,-33", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AnIndirectDisplaySwitchedWithModes_IsLeftOutOfAModeThatDoesNotUseIt()
+    {
+        // 2026-09-26: the user wants the Prompter off in Sim Rig mode.
+        var live = TopologyFixture.Empty().WithRigMonitor().WithPrompter();
+        var profile = TopologyFixture.Empty().WithRigMonitor();
+
+        var carried = DisplaySubmissionBuilder.Build(profile, live);
+        var switched = DisplaySubmissionBuilder.Build(profile, live, switchedIndirect: [TopologyFixture.PrompterMonitorPath]);
+
+        Assert.Contains(Assert.IsType<DisplaySnapshot>(carried.Submission).Paths, path => path.MonitorDevicePath == TopologyFixture.PrompterMonitorPath);
+        var submission = Assert.IsType<DisplaySnapshot>(switched.Submission);
+        Assert.Equal(TopologyFixture.RigMonitorPath, Assert.Single(submission.Paths).MonitorDevicePath);
+    }
+
+    [Fact]
+    public void AnIndirectDisplaySwitchedWithModes_IsSwitchedBackOnInAModeThatUsesIt()
+    {
+        var live = TopologyFixture.Empty().WithRigMonitor();                        // the Prompter is off
+        var profile = TopologyFixture.Empty().WithRigMonitor().WithPrompter();      // this mode uses it
+        var connected = new[] { live.Paths[0].ToConnected(), TopologyFixture.Empty().WithPrompter().Paths[0].ToConnected() };
+
+        var carried = DisplaySubmissionBuilder.Build(profile, live, connected);
+        var switched = DisplaySubmissionBuilder.Build(profile, live, connected, [TopologyFixture.PrompterMonitorPath]);
+
+        // Not switched with modes: left off, as before.
+        Assert.DoesNotContain(Assert.IsType<DisplaySnapshot>(carried.Submission).Paths, path => path.MonitorDevicePath == TopologyFixture.PrompterMonitorPath);
+        var submission = Assert.IsType<DisplaySnapshot>(switched.Submission);
+        var prompter = Assert.Single(submission.Paths, path => path.MonitorDevicePath == TopologyFixture.PrompterMonitorPath);
+        Assert.True(prompter.IndirectOptIn);
+        Assert.Equal(2, submission.Paths.Count);
+    }
+
+    [Fact]
+    public void AnIndirectDisplaySwitchedWithModes_ThatIsNotConnected_NeverBlocksASwitch()
+    {
+        var live = TopologyFixture.Empty().WithRigMonitor();
+        var profile = TopologyFixture.Empty().WithRigMonitor().WithPrompter();   // the Prompter is unplugged
+
+        var result = DisplaySubmissionBuilder.Build(profile, live, [live.Paths[0].ToConnected()], [TopologyFixture.PrompterMonitorPath]);
+
+        Assert.Empty(result.Issues);
+        Assert.Single(Assert.IsType<DisplaySnapshot>(result.Submission).Paths);
+        Assert.Contains(result.Notes, note => note.Contains("not connected, so it stays off", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AnIndirectDisplayThatDidNotComeOnOrGoOff_IsReportedNotRolledBack()
+    {
+        // Expected on, still off: a slow DisplayLink display.
+        var expected = DisplaySubmissionBuilder.Build(TopologyFixture.Empty().WithRigMonitor().WithPrompter(),
+            TopologyFixture.Empty().WithRigMonitor().WithPrompter(), switchedIndirect: [TopologyFixture.PrompterMonitorPath]).Submission!;
+        var slow = DisplayVerifier.Verify(expected, TopologyFixture.Empty().WithRigMonitor());
+        Assert.True(slow.Passed);
+        Assert.Contains(slow.Findings, finding => finding.Field == "active" && finding.Severity == VerificationSeverity.Warning);
+
+        // Expected off, still on.
+        var stuck = DisplayVerifier.Verify(TopologyFixture.Empty().WithRigMonitor(), TopologyFixture.Empty().WithRigMonitor().WithPrompter());
+        Assert.True(stuck.Passed);
+
+        // A monitor is still held to it: the rig monitor turning up unasked undoes the switch.
+        Assert.False(DisplayVerifier.Verify(TopologyFixture.Empty().WithDeskMonitor(), TopologyFixture.Empty().WithDeskMonitor().WithRigMonitor()).Passed);
+    }
+
+    [Fact]
+    public void ACarriedDisplay_ThatOverlapsNothing_StaysExactlyWhereItWas()
+    {
+        var profile = TopologyFixture.Empty().WithDeskMonitor();
+        var live = TopologyFixture.Empty().WithDeskMonitor().WithPrompter();
+
+        var result = DisplaySubmissionBuilder.Build(profile, live);
+
+        var submission = Assert.IsType<DisplaySnapshot>(result.Submission);
+        var prompter = submission.Paths.Single(path => path.FriendlyName == "Elgato Prom.");
+        var mode = submission.Modes[(int)prompter.SourceModeInfoIdx];
+        Assert.Equal((-1024, 0), (mode.PositionX, mode.PositionY));
+        Assert.DoesNotContain(result.Notes, note => note.Contains("moved", StringComparison.Ordinal));
     }
 }

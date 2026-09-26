@@ -15,5 +15,7 @@ public sealed class DisplayConfigGateway : IDisplayConfigGateway
 
     public DisplaySnapshot CaptureActive() => _displays.CaptureCurrent();
 
+    public IReadOnlyList<ConnectedTarget> CaptureConnected() => _displays.CaptureConnectedTargets();
+
     public int Submit(DisplaySnapshot snapshot, uint sdcFlags) => _displays.Submit(snapshot, sdcFlags);
 }

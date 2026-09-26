@@ -28,4 +28,10 @@
     <InternalsVisibleTo Include="SimRigMode.Tests" />
   </ItemGroup>
 
+  <!-- The standby test build: dotnet publish SimRigMode.csproj -p:StandbyTest=true.
+       See Product.IsStandbyTest. The normal build never sets it. -->
+  <PropertyGroup Condition="'$(StandbyTest)' == 'true'">
+    <DefineConstants>$(DefineConstants);STANDBY_TEST</DefineConstants>
+  </PropertyGroup>
+
 </Project>

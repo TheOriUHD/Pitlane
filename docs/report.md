@@ -1,6 +1,82 @@
 # SimRigMode Incident Forensic Report
 
+## 0. Correction, 2026-09-24: the cause was the PG27AQDP, not the Prompter
+
+**The conclusion of the original report below is wrong. Read this section first.**
+
+The stutter of 2026-09-13 recurred on 2026-09-24 with the Elgato Prompter unplugged. It was then
+measured directly, and the cause is the ASUS PG27AQDP (the Sim Rig monitor, `DISPLAY\AUS2740`,
+HDMI on the RTX 5090):
+
+- **The loop.** Left connected but detached from the desktop, the PG27AQDP drops off the bus
+  about 6.6 s after it is detached and comes back about 1 s later. It repeats every **7.6 s** for
+  as long as it is left like that, whether the monitor is on, in standby, or switched off. Switched
+  off over DDC/CI with its LED dark, it looped just the same. Attached to the desktop, it never
+  drops out, even switched off: after parking it at 16:22 there were 0 dropouts and 0 stalls.
+  Windows logs each dropout as Kernel-PnP Device Management event 1010, "surprise removed as it
+  is reported as missing on the bus".
+- **The symptom.** Every return stalls Windows' window manager and input delivery. Measured: posted
+  messages arriving 40-75 ms late, window-manager calls blocked for 45 ms, and the compositor stalled
+  for up to 88 ms, all within 150 ms of a reconnect, and no stalls at any other time. Apps that
+  react to monitor changes pause as well. The user saw typing freeze and then appear all at
+  once, with any keyboard. The active screens never flickered, because the monitor that was
+  reconnecting was the dark one, and audio was unaffected.
+- **The trigger.** SimRigMode's Desktop mode put the PG27AQDP in exactly that state. The build
+  in use (published 2026-09-20 20:39, before Phase 3c) also passed `SDC_SAVE_TO_DATABASE`,
+  so Windows re-applied "PG27AQDP dark" by itself on every reconnect, even with SimRigMode closed
+  and after reboots.
+- **The timeline.** The PG27AQDP was first connected on 2026-09-12 at 00:05. Every loop began 5 to
+  18 s after a switch to Desktop, or after a monitor-set change that made Windows re-apply a saved
+  layout. Loops ended when Sim Rig mode made the monitor active again. On 2026-09-12 at 23:23:12
+  the loop stopped at the exact second of the Sim Rig switch.
+
+| Loop | Dropouts | Started after |
+|---|---|---|
+| 2026-09-12 23:22-23:23 | 10 | Desktop switch 23:21:56 |
+| 2026-09-13 00:03-01:29 | 629 | Desktop switch 00:02:57 |
+| 2026-09-20 21:48-22:05 | 128 | Prompter re-plugs; SimRigMode not running |
+| 2026-09-24 15:03-(ongoing) | 205+ | Desktop switch 15:03:19 |
+
+**Why the Prompter looked guilty.** Windows stores one saved layout per *set of connected
+monitors*. Plugging or unplugging the Prompter changes the set, so Windows applies a different
+saved layout. With the Prompter connected, the layout the old build saved kept the PG27AQDP
+dark, so the loop ran. Without the Prompter, a different layout applied and the loop stopped. That
+is the "connected equals stutter, disconnected equals smooth" A/B result below. It was real, but
+it pointed at the wrong device. The Prompter's DisplayLink stack was never shown to be faulty.
+
+**What was changed** (see `docs/SAFETY.md`, invariants 2, 11-13 and 15):
+
+1. **SimRigMode never writes Windows' display database.** Not in a switch, not from a button,
+   not at all. `DisplayService.Submit` refuses `SDC_SAVE_TO_DATABASE`, and
+   `WindowsOwnedStateTests` fails if anything else in the product names it. Only Windows itself
+   (Settings > System > Display) saves layouts now.
+2. **The layout changes only in a switch the user starts.** The watchdog reports a looping
+   monitor and says how to fix it in Windows' own settings; it no longer attaches it. It only
+   puts the monitor on the park list, so SimRigMode's own next switch does not detach it again.
+3. **SimRigMode sends monitors no commands.** Parking used to add a DDC/CI power-off; that is
+   removed. A monitor's power is switched with its own button.
+4. A monitor on the park list is never detached. When a mode leaves it out, it stays attached
+   in a corner where it touches the desktop at a single point.
+5. The display pipeline can switch a connected-but-dark monitor ON. It only resolved profiles
+   against active displays, so Sim Rig -> Desktop was always refused as "not connected". This was
+   never noticed because the build in use predated that pipeline.
+
+On 2026-09-24 the layout on screen was saved as Windows' default three times, for the monitor
+sets with and without the Prompter, the last at 19:07, from a development harness running
+SimRigMode's code. That replaced the "PG27AQDP detached" layouts the old build had saved. What is
+saved now is the layout Windows' own Settings would save, with the PG27AQDP attached in the
+corner. The feature that did this has been removed.
+
+**A second, separate loop the same evening.** After an unclean power-off at 18:41, a different
+device looped: the RØDECaster Duo's built-in SD card storage (`USB\VID_05E3&PID_0764`),
+171 dropouts between 18:56 and 19:03, one every 4.6 s, with the same stutter. Ejecting only
+that storage function at 19:06 stopped it. SimRigMode has no USB rules and never touched it.
+The same device has single dropouts logged on 8 days back to 2026-05-26, months before
+SimRigMode existed.
+
 ## 1. Executive Summary
+
+> Superseded by section 0. Kept unchanged as the record of the original investigation.
 
 The current stutter is **CONFIRMED at the symptom level to be triggered by the Elgato Prompter/DisplayLink USB path**: connected causes the stutter, unplugged removes it, and reconnecting immediately restores it. The repository contains a credible mechanism by which SimRigMode could have triggered or exposed a DisplayLink defect: each switch to Sim Rig mode calls `SetDisplayConfig` with a supplied topology that contains only the ASUS PG27AQDP and omits the DisplayLink-backed Prompter path; each switch back to Desktop calls it again with the raw captured Prompter adapter/source/target path. Both calls use `SDC_SAVE_TO_DATABASE`, so Windows is explicitly asked to persist the resulting topology.
 

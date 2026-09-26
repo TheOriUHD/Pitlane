@@ -4,13 +4,18 @@ using System.Reflection;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using SimRigMode.Models;
 using SimRigMode.Services;
+using SimRigMode.Services.Apps;
+using SimRigMode.Services.Display;
 using SimRigMode.UI;
 using Windows.Storage.Pickers;
+using VirtualKey = Windows.System.VirtualKey;
 
 namespace SimRigMode;
 
@@ -35,7 +40,7 @@ public sealed partial class SettingsWindow : Window
     {
         _host = host;
         InitializeComponent();
-        Title = "SimRigMode Settings";
+        Title = Product.Name;
         SystemBackdrop = new MicaBackdrop();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -49,6 +54,9 @@ public sealed partial class SettingsWindow : Window
         Navigation.SelectedItem = Navigation.MenuItems[0];
         _host.Log.EntryWritten += OnLogEntry;
         _host.Switcher.StepCompleted += OnStepCompleted;
+        OverviewSwitch.HoldStarted += _ => OverviewCaption.Text = "Keep holding";
+        OverviewSwitch.HoldCancelled += () => { if (!_transitioning) OverviewCaption.Text = HoldHint(); };
+        OverviewSwitch.Confirmed += target => _ = _host.SwitchModeAsync(target);
     }
 
     public void ShowAndActivate()
@@ -63,13 +71,6 @@ public sealed partial class SettingsWindow : Window
         if (!_initialized) _ = InitializeAsync();
     }
 
-    internal void InitializeHidden()
-    {
-        _appWindow.Move(new Windows.Graphics.PointInt32(-32000, -32000));
-        Activate();
-        RootGrid.DispatcherQueue.TryEnqueue(() => { Hide(); CenterWindow(); });
-    }
-
     private async Task InitializeAsync()
     {
         _loadingValues = true;
@@ -80,6 +81,7 @@ public sealed partial class SettingsWindow : Window
         await RefreshUsbAsync();
         await RefreshAudioAsync();
         _initialized = true;
+        SetOverviewStatus(OverviewState.Active, Config.CurrentMode == WorkspaceMode.Unknown ? "Not switched yet" : "Active");
         UpdateSummaries();
     }
 
@@ -95,63 +97,576 @@ public sealed partial class SettingsWindow : Window
         RigPowerOnDelay.Value = Config.General.HardwarePowerOnWaitSeconds;
         UsbEnumerationDelay.Value = Config.General.UsbEnumerationWaitSeconds;
         DesktopPowerOffDelay.Value = Config.General.HardwarePowerOffDelaySeconds;
-        IntegrationToggle.IsOn = Config.Integration.Enabled;
-        IntegrationExpander.Visibility = Config.Integration.Enabled ? Visibility.Visible : Visibility.Collapsed;
-        IntegrationActions.Visibility = Config.Integration.Enabled ? Visibility.Visible : Visibility.Collapsed;
-        OnWebhookText.Text = Config.Integration.OnWebhookUrl;
-        OffWebhookText.Text = Config.Integration.OffWebhookUrl;
-        HaBaseUrlText.Text = Config.Integration.BaseUrl;
-        HaEntityText.Text = Config.Integration.EntityId;
+        LoadIntegration();
         VersionText.Text = $"Version {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0"}  •  Windows App SDK 2.4  •  x64";
+        UpdatePowerOffList();
+        RenderLinkedApps();
     }
+
+    // ===== Apps linked to a mode =======================================================
+
+    private Task<IReadOnlyList<DiscoveredApp>>? _discovery;
+
+    private void RenderLinkedApps()
+    {
+        RenderAppList(SimRigAppsPanel, Config.SimRig, "Sim rig");
+        RenderAppList(DesktopAppsPanel, Config.Desktop, "Desktop");
+    }
+
+    private void RenderAppList(StackPanel panel, ModeConfig mode, string modeName)
+    {
+        panel.Children.Clear();
+        if (mode.LinkedApps.Count == 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"No apps linked to {modeName} mode.",
+                Margin = new Thickness(4, 0, 0, 0),
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+            });
+            return;
+        }
+
+        var secondary = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        foreach (var app in mode.LinkedApps.ToList())
+        {
+            // One expandable card per app, the way Windows Settings lays out an item with options:
+            // the name, the path and the remove button on one line, the options inside. With the
+            // options on the card's right-hand side, a narrow window squeezed the name and path
+            // down to a sliver, one character per line.
+            var start = new ToggleSwitch { IsOn = app.StartWithMode };
+            var close = new ToggleSwitch { IsOn = app.CloseWhenLeaving };
+            var force = new ToggleSwitch { IsOn = app.ForceClose, IsEnabled = app.CloseWhenLeaving };
+            start.Toggled += async (_, _) => { app.StartWithMode = start.IsOn; await SaveAppsAsync(); };
+            close.Toggled += async (_, _) => { app.CloseWhenLeaving = close.IsOn; force.IsEnabled = app.CloseWhenLeaving; await SaveAppsAsync(); };
+            force.Toggled += async (_, _) => { app.ForceClose = force.IsOn; await SaveAppsAsync(); };
+
+            var remove = new Button { Content = new SymbolIcon(Symbol.Delete) };
+            ToolTipService.SetToolTip(remove, "Remove from " + modeName + " mode");
+            AutomationProperties.SetName(remove, $"Remove {app.Name} from {modeName} mode");
+            remove.Click += async (_, _) => { mode.LinkedApps.Remove(app); await SaveAppsAsync(); RenderLinkedApps(); };
+
+            var where = File.Exists(app.Path) ? app.Path : app.Path + "  •  Not found";
+            var path = new TextBlock
+            {
+                Text = where,
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                Foreground = secondary,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap
+            };
+            ToolTipService.SetToolTip(path, where);
+
+            var card = new CommunityToolkit.WinUI.Controls.SettingsExpander
+            {
+                Header = app.Name,
+                Description = path,
+                HeaderIcon = new FontIcon { Glyph = "\uE8FC" },
+                Content = remove
+            };
+            card.Items.Add(new CommunityToolkit.WinUI.Controls.SettingsCard { Header = "Start with the mode", Description = "Started when the mode begins, unless it is already running", Content = start });
+            card.Items.Add(new CommunityToolkit.WinUI.Controls.SettingsCard { Header = "Close when leaving", Description = "Asked to close when you switch to the other mode", Content = close });
+            card.Items.Add(new CommunityToolkit.WinUI.Controls.SettingsCard { Header = "End it if it won't close", Description = "Many sim tools hide in the tray instead of closing; this ends them a few seconds later", Content = force });
+            panel.Children.Add(card);
+        }
+    }
+
+    private async Task SaveAppsAsync()
+    {
+        try { await _host.Configuration.SaveAsync(); UpdateSummaries(); }
+        catch (Exception ex) { Report(AppsInfoBar, "The app settings could not be saved", ex); }
+    }
+
+    private async void AddApp_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag }) return;
+        var mode = tag == "desktop" ? Config.Desktop : Config.SimRig;
+        var modeName = tag == "desktop" ? "Desktop" : "Sim rig";
+        try
+        {
+            _discovery ??= Task.Run(() => new AppDiscoveryService().Discover());
+            var picked = await PickAppsAsync(modeName, mode);
+            if (picked.Count == 0) return;
+
+            var added = new List<string>();
+            var skipped = new List<string>();
+            foreach (var app in picked)
+            {
+                if (mode.LinkedApps.Any(linked => linked.Path.Equals(app.Path, StringComparison.OrdinalIgnoreCase)) ||
+                    mode.LinkedApps.Count >= LinkedAppSanitizer.MaxAppsPerMode)
+                {
+                    skipped.Add(app.Name);
+                    continue;
+                }
+                mode.LinkedApps.Add(new LinkedApp { Name = app.Name, Path = app.Path, Arguments = app.Arguments });
+                added.Add(app.Name);
+            }
+            if (added.Count > 0) { await _host.Configuration.SaveAsync(); RenderLinkedApps(); UpdateSummaries(); }
+
+            if (added.Count == 0)
+                ShowInfo(AppsInfoBar, "Nothing new to link", $"{string.Join(", ", skipped)} {(skipped.Count == 1 ? "is" : "are")} already linked to {modeName} mode.", InfoBarSeverity.Informational);
+            else
+                ShowInfo(AppsInfoBar, $"Linked {added.Count} app{(added.Count == 1 ? "" : "s")} to {modeName} mode",
+                    $"{string.Join(", ", added)}: started when {modeName} mode begins, closed when you switch to the other mode." +
+                    (skipped.Count > 0 ? $" Skipped {string.Join(", ", skipped)}, already linked or the list is full." : ""),
+                    InfoBarSeverity.Success);
+        }
+        catch (Exception ex) { Report(AppsInfoBar, "The apps could not be added", ex); }
+    }
+
+    /// <summary>
+    /// The app picker: every app found in the Start menu and among running programs, sim racing
+    /// tools first. Tick as many as you like. Ticks survive searching, and Browse adds programs to
+    /// the ticked set without closing the picker. Apps already linked to this mode are shown but
+    /// cannot be ticked again.
+    /// </summary>
+    private async Task<IReadOnlyList<DiscoveredApp>> PickAppsAsync(string modeName, ModeConfig mode)
+    {
+        var secondary = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        var search = new AutoSuggestBox { PlaceholderText = "Search apps", QueryIcon = new SymbolIcon(Symbol.Find) };
+        var status = new TextBlock { Text = "Looking for installed apps…", Foreground = secondary };
+        var list = new ListView { SelectionMode = ListViewSelectionMode.Multiple, Height = 380 };
+        var content = new StackPanel { Spacing = 10, Width = 540 };
+        content.Children.Add(search); content.Children.Add(status); content.Children.Add(list);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = RootGrid.XamlRoot, Title = $"Link apps to {modeName} mode", Content = content,
+            PrimaryButtonText = "Add", SecondaryButtonText = "Browse for .exe", CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary, IsPrimaryButtonEnabled = false
+        };
+
+        var apps = new List<DiscoveredApp>();
+        var ticked = new Dictionary<string, DiscoveredApp>(StringComparer.OrdinalIgnoreCase);
+        var linked = new HashSet<string>(mode.LinkedApps.Select(app => app.Path), StringComparer.OrdinalIgnoreCase);
+        var loaded = false;
+        var filling = false;
+
+        void Refresh()
+        {
+            var query = search.Text?.Trim() ?? "";
+            status.Text = !loaded && apps.Count == 0 ? "Looking for installed apps…"
+                : apps.Count == 0 ? "No apps were found. Use Browse to pick programs."
+                : $"{list.Items.Count} {(query.Length > 0 ? "matching apps" : "apps")}, {ticked.Count} ticked. Sim racing tools are listed first.";
+            dialog.IsPrimaryButtonEnabled = ticked.Count > 0;
+            dialog.PrimaryButtonText = ticked.Count <= 1 ? "Add" : $"Add {ticked.Count} apps";
+        }
+
+        void Fill()
+        {
+            // Rebuilding the list raises SelectionChanged for every row it removes; those are not
+            // the user unticking anything, so they must not touch the ticked set.
+            filling = true;
+            try
+            {
+                var query = search.Text?.Trim() ?? "";
+                list.Items.Clear();
+                var reticked = new List<ListViewItem>();
+                foreach (var app in apps.Where(app => query.Length == 0 ||
+                             app.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                             app.Path.Contains(query, StringComparison.OrdinalIgnoreCase)).Take(400))
+                {
+                    var alreadyLinked = linked.Contains(app.Path);
+                    var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                    title.Children.Add(new TextBlock { Text = app.Name, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
+                    if (app.IsSimRacing)
+                        title.Children.Add(new Border
+                        {
+                            CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1, 6, 1), VerticalAlignment = VerticalAlignment.Center,
+                            Background = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"],
+                            Child = new TextBlock { Text = "Sim racing", FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextOnAccentFillColorPrimaryBrush"] }
+                        });
+                    if (alreadyLinked)
+                        title.Children.Add(new TextBlock { Text = "Already linked", FontSize = 12, Foreground = secondary, VerticalAlignment = VerticalAlignment.Center });
+                    var row = new StackPanel { Spacing = 2, Padding = new Thickness(0, 4, 0, 4) };
+                    row.Children.Add(title);
+                    row.Children.Add(new TextBlock { Text = app.Path, FontSize = 12, Foreground = secondary, TextTrimming = TextTrimming.CharacterEllipsis });
+                    var item = new ListViewItem { Content = row, Tag = app, IsEnabled = !alreadyLinked };
+                    list.Items.Add(item);
+                    if (ticked.ContainsKey(app.Path)) reticked.Add(item);
+                }
+                foreach (var item in reticked) list.SelectedItems.Add(item);
+            }
+            finally { filling = false; }
+            Refresh();
+        }
+
+        search.TextChanged += (_, _) => Fill();
+        list.SelectionChanged += (_, args) =>
+        {
+            if (filling) return;
+            foreach (var app in args.AddedItems.OfType<ListViewItem>().Select(item => item.Tag).OfType<DiscoveredApp>()) ticked[app.Path] = app;
+            foreach (var app in args.RemovedItems.OfType<ListViewItem>().Select(item => item.Tag).OfType<DiscoveredApp>()) ticked.Remove(app.Path);
+            Refresh();
+        };
+
+        // Browse adds to the ticked set and keeps the picker open, so found and browsed apps can
+        // be added in one go.
+        dialog.SecondaryButtonClick += async (_, args) =>
+        {
+            args.Cancel = true;
+            var deferral = args.GetDeferral();
+            try
+            {
+                var picker = new FileOpenPicker(); picker.FileTypeFilter.Add(".exe"); InitializePicker(picker);
+                var files = await picker.PickMultipleFilesAsync();
+                foreach (var file in files)
+                {
+                    var app = apps.FirstOrDefault(existing => existing.Path.Equals(file.Path, StringComparison.OrdinalIgnoreCase));
+                    if (app is null)
+                    {
+                        var name = AppDiscoveryService.FriendlyName(file.Path, System.IO.Path.GetFileNameWithoutExtension(file.Path));
+                        app = new DiscoveredApp(name, file.Path, "", AppCatalog.IsSimRacing(name, file.Path));
+                        apps.Insert(0, app);
+                    }
+                    if (!linked.Contains(app.Path)) ticked[app.Path] = app;
+                }
+                if (files.Count > 0) { search.Text = ""; Fill(); }
+            }
+            catch (Exception ex) { _host.Log.Error("Browsing for a program failed", ex); }
+            finally { deferral.Complete(); }
+        };
+
+        _ = LoadAsync();
+        async Task LoadAsync()
+        {
+            IReadOnlyList<DiscoveredApp> found;
+            try { found = await _discovery!; } catch { found = []; }
+            foreach (var app in found)
+                if (!apps.Any(existing => existing.Path.Equals(app.Path, StringComparison.OrdinalIgnoreCase))) apps.Add(app);
+            loaded = true;
+            Fill();
+        }
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return [];
+        // In list order: browsed programs first, then sim racing tools, then the rest.
+        return apps.Where(app => ticked.ContainsKey(app.Path) && !linked.Contains(app.Path)).ToList();
+    }
+
+    /// <summary>The Safety card listing monitors that are parked when a mode leaves them out.
+    /// It lives there as well as on the Displays page because a monitor that is out of the layout
+    /// does not appear on the Displays page at all.</summary>
+    private void UpdatePowerOffList()
+    {
+        var entries = Config.General.SwitchOffWhenUnused;
+        PowerOffListCard.Description = entries.Count == 0
+            ? "None. A monitor is added when you turn this on for it on the Displays page, or when Pitlane sees it keep dropping out."
+            : string.Join(", ", entries.Select(entry =>
+                entry.FriendlyName + (DisplayPowerPolicy.IsParked(Config.General, entry.MonitorDevicePath) ? ", parked now" : "") +
+                (entry.Reason == "watchdog" ? ", seen dropping out" : "")));
+        ClearPowerOffListButton.IsEnabled = entries.Count > 0;
+    }
+
+    private async void ClearPowerOffList_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Config.General.SwitchOffWhenUnused.Clear();
+            Config.General.ParkedDisplays.Clear();
+            await _host.Configuration.SaveAsync(); UpdatePowerOffList();
+            if (_selectedDisplay is not null) SelectDisplay(_selectedDisplay);
+            ShowInfo(SettingsInfoBar, "List cleared", "Mode switches will detach monitors they leave out. If one starts dropping out, Pitlane tells you and puts it back on this list.", InfoBarSeverity.Success);
+        }
+        catch (Exception ex) { Report(SettingsInfoBar, "The list could not be saved", ex); }
+    }
+
+    private async void DisplaySwitchedToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingValues || _selectedDisplay is null) return;
+        var display = _selectedDisplay;
+        var on = DisplaySwitchedToggle.IsOn;
+        try
+        {
+            DisplayPowerPolicy.SetSwitchedWithModes(Config.General, display.MonitorDevicePath, on);
+            await _host.Configuration.SaveAsync();
+            SelectDisplay(display);
+            ShowInfo(DisplayInfoBar,
+                on ? $"{display.FriendlyName} switches with the modes" : $"{display.FriendlyName} is left as it is",
+                on ? "It is on in the modes that use it, and off in the others."
+                   : "Pitlane leaves it on or off as it is when switching modes.",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            _loadingValues = true; DisplaySwitchedToggle.IsOn = !on; _loadingValues = false;
+            Report(DisplayInfoBar, "The setting could not be saved", ex);
+        }
+    }
+
+    private async void DisplayPowerOffToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingValues || _selectedDisplay is null) return;
+        var display = _selectedDisplay;
+        var on = DisplayPowerOffToggle.IsOn;
+        try
+        {
+            if (on) DisplayPowerPolicy.Remember(Config.General, display.MonitorDevicePath, display.FriendlyName, "user");
+            else DisplayPowerPolicy.Forget(Config.General, display.MonitorDevicePath);
+            await _host.Configuration.SaveAsync(); UpdatePowerOffList();
+            ShowInfo(DisplayInfoBar,
+                on ? $"{display.FriendlyName} will be parked" : $"{display.FriendlyName} will be detached",
+                on ? "When a mode leaves it out, Pitlane keeps it attached in a corner instead of detaching it. Switch its screen off with its own power button."
+                   : "When a mode leaves it out, Pitlane detaches it. If it starts dropping out, Pitlane tells you.",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            _loadingValues = true; DisplayPowerOffToggle.IsOn = !on; _loadingValues = false;
+            Report(DisplayInfoBar, "The setting could not be saved", ex);
+        }
+    }
+
+    /// <summary>Raised by the display watchdog when a monitor keeps dropping out.</summary>
+    public void ShowDisplayWatchdogWarning(string title, string message) => Enqueue(() =>
+    {
+        ShowInfo(OverviewInfoBar, title, message, InfoBarSeverity.Warning);
+        UpdatePowerOffList();
+        if (_selectedDisplay is not null) SelectDisplay(_selectedDisplay);
+    });
 
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItemContainer?.Tag is not string tag) return;
         SetPage(OverviewPage, tag == "overview"); SetPage(DesktopPage, tag == "desktop"); SetPage(SimRigPage, tag == "simrig");
         SetPage(DisplaysPage, tag == "displays"); SetPage(UsbPage, tag == "usb"); SetPage(AudioPage, tag == "audio");
-        SetPage(IntegrationsPage, tag == "integrations"); SetPage(SettingsPage, tag == "settings");
+        SetPage(AppsPage, tag == "apps"); SetPage(IntegrationsPage, tag == "integrations"); SetPage(SettingsPage, tag == "settings");
+        if (tag == "integrations") _ = CheckIntegrationAsync();
+        if (tag == "apps")
+        {
+            // Start looking for installed apps now, so the picker is ready when it opens.
+            _discovery ??= Task.Run(() => new AppDiscoveryService().Discover());
+            RenderLinkedApps();
+        }
     }
     private void PageHost_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         var paneWidth = Navigation.DisplayMode == NavigationViewDisplayMode.Expanded ? Navigation.OpenPaneLength : 0;
         var width = Math.Min(1050, Math.Max(420, e.NewSize.Width - paneWidth - 64));
-        foreach (var viewer in new[] { OverviewPage, DesktopPage, SimRigPage, DisplaysPage, AudioPage, IntegrationsPage, SettingsPage })
+        foreach (var viewer in new[] { OverviewPage, DesktopPage, SimRigPage, DisplaysPage, AudioPage, AppsPage, IntegrationsPage, SettingsPage })
             if (viewer.Content is StackPanel panel) panel.Width = width;
     }
     private static void SetPage(UIElement page, bool visible) => page.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-    private void NavigateButton_Click(object sender, RoutedEventArgs e) { if (sender is Button { Tag: string tag }) SelectNavigation(tag); }
+    private void NavigateButton_Click(object sender, RoutedEventArgs e) { if (sender is FrameworkElement { Tag: string tag }) SelectNavigation(tag); }
     private void SelectNavigation(string tag)
     {
         foreach (var item in Navigation.MenuItems.Concat(Navigation.FooterMenuItems).OfType<NavigationViewItem>())
             if (item.Tag as string == tag) { Navigation.SelectedItem = item; return; }
     }
 
+    // ===== Overview ======================================================================
+
+    private bool _transitioning;
+    private enum OverviewState { Active, Switching, Warning, Failed }
+
+    private WorkspaceMode ActiveMode => Config.CurrentMode == WorkspaceMode.SimRig ? WorkspaceMode.SimRig : WorkspaceMode.Desktop;
+    private static WorkspaceMode OtherMode(WorkspaceMode mode) => mode == WorkspaceMode.SimRig ? WorkspaceMode.Desktop : WorkspaceMode.SimRig;
+    private static string ModeName(WorkspaceMode mode) => mode == WorkspaceMode.SimRig ? "Sim Rig" : "Desktop";
+    private string HoldHint() => $"Hold for 3 seconds to switch to {ModeName(OtherMode(ActiveMode))}";
+
+    // The "Apply this workspace" buttons on the two mode pages: a deliberate click, no hold.
     private async void DesktopSwitch_Click(object sender, RoutedEventArgs e) => await _host.SwitchModeAsync(WorkspaceMode.Desktop);
     private async void RigSwitch_Click(object sender, RoutedEventArgs e) => await _host.SwitchModeAsync(WorkspaceMode.SimRig);
-    private void CancelTransition_Click(object sender, RoutedEventArgs e) { _host.CancelTransition(); CancelTransitionButton.IsEnabled = false; TransitionTitle.Text = "Cancelling at the next safe point…"; }
+
+    private void CancelTransition_Click(object sender, RoutedEventArgs e) { _host.CancelTransition(); OverviewCancel.IsEnabled = false; OverviewCaption.Text = "Cancelling at the next safe point…"; }
 
     public void BeginTransition(WorkspaceMode target) => Enqueue(() =>
     {
-        TransitionPanel.Visibility = Visibility.Visible; TransitionSteps.Items.Clear(); TransitionProgress.IsIndeterminate = true;
-        TransitionTitle.Text = $"Switching to {(target == WorkspaceMode.Desktop ? "Desktop" : "Sim rig")} mode";
-        CancelTransitionButton.IsEnabled = true; DesktopSwitchButton.IsEnabled = RigSwitchButton.IsEnabled = false;
+        _transitioning = true;
         OverviewInfoBar.IsOpen = false;
+        // Started from the tray, a shortcut or the flyout: slide over now, like a hold would.
+        if (OverviewSwitch.Mode != target) OverviewSwitch.SetMode(target);
+        OverviewSwitch.IsBusy = true;
+        OverviewMode.Text = ModeName(target);
+        SetOverviewStatus(OverviewState.Switching, "Switching…");
+        OverviewCaption.Text = $"Switching to {ModeName(target)}";
+        OverviewCancel.IsEnabled = true;
+        OverviewCancel.Visibility = Visibility.Visible;
+        OverviewSteps.Children.Clear();
+        OverviewSteps.Visibility = Visibility.Visible;
     });
+
     public void EndTransition(WorkspaceMode mode, IReadOnlyList<TransitionStep> results) => Enqueue(() =>
     {
-        TransitionProgress.IsIndeterminate = false; TransitionProgress.Value = 100; CancelTransitionButton.IsEnabled = false;
-        DesktopSwitchButton.IsEnabled = RigSwitchButton.IsEnabled = true;
-        var warnings = results.Where(x => !x.Success).ToList();
-        ShowInfo(OverviewInfoBar, warnings.Count == 0 ? "Workspace switched" : "Workspace switched with warnings", warnings.Count == 0 ? $"{(mode == WorkspaceMode.Desktop ? "Desktop" : "Sim rig")} mode is active." : string.Join("\n", warnings.Select(x => $"{x.Name}: {x.Detail}")), warnings.Count == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+        _transitioning = false;
+        OverviewSwitch.IsBusy = false;
+        OverviewCancel.Visibility = Visibility.Collapsed;
+        var active = ActiveMode;
+        OverviewSwitch.SetMode(active);
+        var warnings = results.Count(step => !step.Success);
+        if (Config.General.DryRunTransitions)
+        {
+            SetOverviewStatus(OverviewState.Active, "Active");
+            OverviewCaption.Text = "Dry run finished. Nothing was changed.";
+        }
+        else if (warnings > 0)
+        {
+            SetOverviewStatus(OverviewState.Warning, $"Active, {warnings} warning{(warnings == 1 ? "" : "s")}");
+            OverviewCaption.Text = $"Switched to {ModeName(active)}, but not every step worked.";
+        }
+        else
+        {
+            SetOverviewStatus(OverviewState.Active, "Active");
+            OverviewCaption.Text = $"Switched to {ModeName(active)}";
+        }
         UpdateSummaries();
     });
+
     public void TransitionFailed(string message) => Enqueue(() =>
     {
-        TransitionProgress.IsIndeterminate = false; TransitionPanel.Visibility = Visibility.Collapsed; DesktopSwitchButton.IsEnabled = RigSwitchButton.IsEnabled = true;
-        ShowInfo(OverviewInfoBar, "Mode switch stopped", message, InfoBarSeverity.Error);
+        _transitioning = false;
+        OverviewSwitch.IsBusy = false;
+        OverviewCancel.Visibility = Visibility.Collapsed;
+        OverviewSwitch.SetMode(ActiveMode);
+        OverviewMode.Text = ModeName(ActiveMode);
+        SetOverviewStatus(OverviewState.Failed, "Switch stopped");
+        OverviewCaption.Text = message;
     });
-    private void OnStepCompleted(TransitionStep step) => Enqueue(() => TransitionSteps.Items.Add($"{(step.Success ? "✓" : "⚠")}  {step.Name}{(step.Success ? "" : " — " + step.Detail)}"));
+
+    /// <summary>Test switches run without the overview; their steps are reported in Settings.</summary>
+    private void OnStepCompleted(TransitionStep step) => Enqueue(() => { if (_transitioning) OverviewSteps.Children.Add(StepRow(step)); });
+
+    private UIElement StepRow(TransitionStep step)
+    {
+        var row = new Grid { ColumnSpacing = 10 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.Children.Add(new FontIcon
+        {
+            Glyph = step.Success ? "\uE73E" : "\uE7BA",
+            FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 2, 0, 0),
+            Foreground = (Brush)Application.Current.Resources[step.Success ? "SystemFillColorSuccessBrush" : "SystemFillColorCautionBrush"]
+        });
+        var text = new TextBlock
+        {
+            Text = step.Success ? step.Name : $"{step.Name}: {step.Detail}",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+        };
+        Grid.SetColumn(text, 1);
+        row.Children.Add(text);
+        return row;
+    }
+
+    private void SetOverviewStatus(OverviewState state, string text)
+    {
+        var color = state switch
+        {
+            OverviewState.Switching or OverviewState.Warning => Windows.UI.Color.FromArgb(255, 251, 191, 36),
+            OverviewState.Failed => Windows.UI.Color.FromArgb(255, 248, 113, 113),
+            _ => Windows.UI.Color.FromArgb(255, 52, 211, 153)
+        };
+        OverviewDot.Fill = new SolidColorBrush(color);
+        OverviewHalo.Fill = new SolidColorBrush(color);
+        OverviewStatus.Text = text;
+
+        // The halo round the dot swells and fades, faster while switching.
+        var halo = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(OverviewHalo);
+        var compositor = halo.Compositor;
+        halo.CenterPoint = new System.Numerics.Vector3(5, 5, 0);
+        var scale = compositor.CreateVector3KeyFrameAnimation();
+        scale.InsertKeyFrame(0, new System.Numerics.Vector3(0.6f, 0.6f, 1));
+        scale.InsertKeyFrame(1, new System.Numerics.Vector3(1.6f, 1.6f, 1));
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.InsertKeyFrame(0, 0.55f);
+        fade.InsertKeyFrame(1, 0);
+        foreach (var animation in new Microsoft.UI.Composition.KeyFrameAnimation[] { scale, fade })
+        {
+            animation.Duration = TimeSpan.FromMilliseconds(state == OverviewState.Switching ? 1100 : 2600);
+            animation.IterationBehavior = Microsoft.UI.Composition.AnimationIterationBehavior.Forever;
+        }
+        halo.StartAnimation("Scale", scale);
+        halo.StartAnimation("Opacity", fade);
+    }
+
+    /// <summary>The mode, the switch at rest, and what each mode does when you switch to it.</summary>
+    private void RenderOverview()
+    {
+        var active = ActiveMode;
+        if (!_transitioning)
+        {
+            OverviewMode.Text = ModeName(active);
+            if (OverviewSwitch.Mode != active) OverviewSwitch.SetMode(active, animate: false);
+            if (string.IsNullOrEmpty(OverviewCaption.Text)) OverviewCaption.Text = HoldHint();
+        }
+        OverviewDryRun.Visibility = Config.General.DryRunTransitions || Product.IsStandbyTest ? Visibility.Visible : Visibility.Collapsed;
+        OverviewDryRunText.Text = Config.General.DryRunTransitions ? "Dry run" : "Standby test";
+
+        // The active mode's card is the only one with a colour: its title, in that mode's colour.
+        var secondary = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        DesktopSummaryTitle.Foreground = active == WorkspaceMode.Desktop ? new SolidColorBrush(HoldSwitch.AccentOf(WorkspaceMode.Desktop)) : secondary;
+        RigSummaryTitle.Foreground = active == WorkspaceMode.SimRig ? new SolidColorBrush(HoldSwitch.AccentOf(WorkspaceMode.SimRig)) : secondary;
+        FillSummary(DesktopSummaryRows, WorkspaceMode.Desktop);
+        FillSummary(RigSummaryRows, WorkspaceMode.SimRig);
+    }
+
+    private void FillSummary(StackPanel rows, WorkspaceMode mode)
+    {
+        var profile = mode == WorkspaceMode.SimRig ? Config.SimRig : Config.Desktop;
+        rows.Children.Clear();
+        rows.Children.Add(SummaryRow("\uE7F4", "Displays", DisplaysValue(profile)));
+        rows.Children.Add(SummaryRow("\uE71D", "Apps", AppsValue(profile)));
+        rows.Children.Add(SummaryRow("\uE767", "Audio", AudioValue(profile.Audio)));
+        var rules = Config.UsbRules.Count(rule => (mode == WorkspaceMode.Desktop ? rule.Desktop : rule.SimRig) != DeviceModeAction.DoNotChange);
+        if (rules > 0)
+            rows.Children.Add(SummaryRow("\uECF0", "USB", $"{rules} rule{(rules == 1 ? "" : "s")}{(Config.General.UsbSwitchingArmed ? "" : ", disarmed")}"));
+        if (Config.Integration.IsActive)
+            rows.Children.Add(SummaryRow("\uE945", "Rig power", mode == WorkspaceMode.SimRig ? "Turns on" : "Turns off"));
+    }
+
+    private static UIElement SummaryRow(string glyph, string label, string value)
+    {
+        var secondary = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        var row = new Grid { ColumnSpacing = 10 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.Children.Add(new FontIcon { Glyph = glyph, FontSize = 14, Foreground = secondary, VerticalAlignment = VerticalAlignment.Center });
+        var name = new TextBlock { Text = label, Foreground = secondary, VerticalAlignment = VerticalAlignment.Center };
+        var text = new TextBlock { Text = value, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(12, 0, 0, 0) };
+        ToolTipService.SetToolTip(text, value);
+        Grid.SetColumn(name, 1);
+        Grid.SetColumn(text, 2);
+        row.Children.Add(name);
+        row.Children.Add(text);
+        return row;
+    }
+
+    private static string DisplaysValue(ModeConfig profile)
+    {
+        if (profile.Displays is null) return "Not captured";
+        var paths = profile.Displays.Paths;
+        // EDID names come padded, and some end in a dash: "27G2WG3-".
+        var names = paths.Select(path => path.FriendlyName.Trim().TrimEnd('-').Trim()).Where(name => name.Length > 0).ToList();
+        if (names.Count == paths.Count && names.Count is 1 or 2) return string.Join(", ", names);
+        return paths.Count == 1 ? "1 display" : $"{paths.Count} displays";
+    }
+
+    private static string AppsValue(ModeConfig profile)
+    {
+        var apps = profile.LinkedApps.Where(app => app.StartWithMode).Select(app => app.Name).ToList();
+        return apps.Count switch { 0 => "None", 1 or 2 => string.Join(", ", apps), _ => $"{apps[0]}, {apps[1]} +{apps.Count - 2}" };
+    }
+
+    private string AudioValue(AudioSelection audio)
+    {
+        if (!string.IsNullOrWhiteSpace(audio.PlaybackDefaultId))
+            return _audioEndpoints.FirstOrDefault(endpoint => endpoint.Id.Equals(audio.PlaybackDefaultId, StringComparison.OrdinalIgnoreCase))?.Name ?? "Set";
+        return new[] { audio.PlaybackCommunicationsId, audio.RecordingDefaultId, audio.RecordingCommunicationsId }.Any(id => !string.IsNullOrWhiteSpace(id)) ? "Set" : "Unchanged";
+    }
+
+    /// <summary>The two cards sit side by side, and stack when there is no room for both.</summary>
+    private void ModeCards_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var stacked = e.NewSize.Width < 560;
+        Grid.SetRow(RigSummary, stacked ? 1 : 0);
+        Grid.SetColumn(RigSummary, stacked ? 0 : 1);
+        ModeCards.ColumnDefinitions[1].Width = stacked ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        ModeCards.ColumnSpacing = stacked ? 0 : 16;
+    }
+
     private void OnLogEntry(string line) => Enqueue(() => { if (DiagnosticsText.Text.Length > 40000) DiagnosticsText.Text = DiagnosticsText.Text[^30000..]; DiagnosticsText.Text += line + Environment.NewLine; });
 
     private async void CaptureDesktop_Click(object sender, RoutedEventArgs e) => await CaptureAsync(Config.Desktop, DesktopInfoBar);
@@ -173,8 +688,22 @@ public sealed partial class SettingsWindow : Window
         {
             // Off the UI thread: QueryDisplayConfig plus a DisplayConfigGetDeviceInfo per path per
             // name is synchronous native work, and RefreshDisplaysAsync already offloaded it.
-            mode.Displays = await Task.Run(_host.Displays.CaptureCurrent); await _host.Configuration.SaveAsync(); _liveDisplays = mode.Displays;
-            RenderDisplays(); UpdateSummaries(); ShowInfo(info, "Display profile captured", $"Saved {mode.Displays.Paths.Count} active displays with exact topology and timing.", InfoBarSeverity.Success);
+            var captured = await Task.Run(_host.Displays.CaptureCurrent);
+            _liveDisplays = captured;
+            // A parked monitor is attached only so that it does not drop out. Its parking spot is
+            // not part of any layout, so it is left out of what is saved.
+            var leftOut = new List<string>();
+            foreach (var parked in captured.Paths.Where(path => DisplayPowerPolicy.IsParked(Config.General, path.MonitorDevicePath)).ToList())
+            {
+                if (captured.Paths.Count <= 1) break;
+                captured = _host.Displays.SetDisplayIncluded(captured, captured, parked, false);
+                leftOut.Add(parked.FriendlyName);
+            }
+            mode.Displays = captured; await _host.Configuration.SaveAsync();
+            RenderDisplays(); UpdateSummaries();
+            ShowInfo(info, "Display profile captured",
+                $"Saved {captured.Paths.Count} active displays with exact topology and timing." +
+                (leftOut.Count > 0 ? $" Left out {string.Join(", ", leftOut)}, which is parked." : ""), InfoBarSeverity.Success);
         }
         catch (Exception ex) { Report(info, "Display capture failed", ex); }
     }
@@ -233,18 +762,23 @@ public sealed partial class SettingsWindow : Window
         var number = DisplayNumber(path, 1); var primary = mode is { PositionX: 0, PositionY: 0 } ? " • Primary display" : "";
         SelectedDisplayCard.Header = $"Display {number} • {path.FriendlyName}";
         SelectedDisplayCard.Description = mode is null ? "Currently unavailable" : $"{mode.Width} × {mode.Height} • {RefreshText(path)}{primary}";
+        if (DisplayPowerPolicy.IsParked(Config.General, path.MonitorDevicePath)) SelectedDisplayCard.Description += "  •  Parked";
         DisplayIdentityText.Text = $"{path.SourceName}\n{path.MonitorDevicePath}".Trim();
-        if (path.IsIndirect && !path.IndirectOptIn)
+        var switchedWithModes = DisplayPowerPolicy.IsSwitchedWithModes(Config.General, path.MonitorDevicePath);
+        if (path.IsIndirect && !switchedWithModes)
         {
-            // Explain why this display will not follow the mode switch. Without this the
-            // behaviour looks like a bug rather than the deliberate protection it is.
-            SelectedDisplayCard.Description += "  \u2022  Carried through unchanged";
+            // Explain why this display does not follow the mode switch, and how to change that.
+            SelectedDisplayCard.Description += "  \u2022  Left as it is";
             DisplayIdentityText.Text += "\n\n" + path.IndirectReason +
-                "\n\nSimRigMode leaves this display exactly as it is when switching modes. Repeatedly " +
-                "removing and re-adding an indirect display is what triggered the 2026-09-13 incident.";
+                "\n\nPitlane leaves this display on or off as it is when switching modes. Turn on Switch with modes to change that.";
         }
         _loadingValues = true;
         DisplayDesktopEnabled.IsOn = ContainsDisplay(Config.Desktop.Displays, path); DisplayRigEnabled.IsOn = ContainsDisplay(Config.SimRig.Displays, path);
+        // A mode never leaves an indirect display out, so there is nothing to park.
+        DisplayPowerOffToggle.IsEnabled = !path.IsIndirect && DisplayPowerPolicy.IsPlausibleMonitorPath(path.MonitorDevicePath);
+        DisplayPowerOffToggle.IsOn = DisplayPowerPolicy.IsListed(Config.General, path.MonitorDevicePath);
+        DisplaySwitchedCard.Visibility = path.IsIndirect ? Visibility.Visible : Visibility.Collapsed;
+        DisplaySwitchedToggle.IsOn = switchedWithModes;
         _loadingValues = false;
         DisplayResolutionCombo.Items.Clear(); DisplayRefreshCombo.Items.Clear(); DisplayOrientationCombo.Items.Clear();
         DisplayResolutionCombo.Items.Add(mode is null ? "Unavailable" : $"{mode.Width} × {mode.Height}"); DisplayResolutionCombo.SelectedIndex = 0;
@@ -408,7 +942,7 @@ public sealed partial class SettingsWindow : Window
                 : "This device is itself protected.";
             var result = await ConfirmAsync("Protected USB branch",
                 $"{row.Name} is protected because disabling it can disconnect system input. {detail}\n\n" +
-                "SimRigMode will still refuse to disable the protected devices themselves, but the rest of the branch will go.",
+                "Pitlane will still refuse to disable the protected devices themselves, but the rest of the branch will go.",
                 "Allow rule");
             // Declining used to abandon the whole save with no message, silently discarding every
             // unsaved edit on the page.
@@ -469,27 +1003,105 @@ public sealed partial class SettingsWindow : Window
     }
     private static string AudioId(ComboBox combo) => (combo.SelectedItem as AudioEndpointInfo)?.Id ?? "";
 
-    private void IntegrationToggle_Toggled(object sender, RoutedEventArgs e) { IntegrationExpander.Visibility = IntegrationToggle.IsOn ? Visibility.Visible : Visibility.Collapsed; IntegrationActions.Visibility = IntegrationToggle.IsOn ? Visibility.Visible : Visibility.Collapsed; }
-    private async void SaveIntegration_Click(object sender, RoutedEventArgs e)
+    // ===== Home Assistant ==============================================================
+
+    private void LoadIntegration()
     {
-        // async void with no catch reaches the global handler and shows a raw error dialog.
-        try { await SaveIntegrationAsync(true); } catch (Exception ex) { Report(IntegrationInfoBar, "Integration could not be saved", ex); }
-    }
-    private async Task SaveIntegrationAsync(bool announce)
-    {
-        Config.Integration.Enabled = IntegrationToggle.IsOn; Config.Integration.OnWebhookUrl = OnWebhookText.Text.Trim(); Config.Integration.OffWebhookUrl = OffWebhookText.Text.Trim(); Config.Integration.BaseUrl = HaBaseUrlText.Text.Trim(); Config.Integration.EntityId = HaEntityText.Text.Trim();
-        if (!string.IsNullOrWhiteSpace(HaTokenBox.Password)) { Config.Integration.ProtectedToken = HomeAssistantService.Protect(HaTokenBox.Password); HaTokenBox.Password = ""; }
-        await _host.Configuration.SaveAsync(); UpdateSummaries(); if (announce) ShowInfo(IntegrationInfoBar, "Integration saved", IntegrationToggle.IsOn ? "Home Assistant power control is enabled." : "Power integration is disabled.", InfoBarSeverity.Success);
-    }
-    private async void TestOn_Click(object sender, RoutedEventArgs e) => await TestIntegrationAsync(true);
-    private async void TestOff_Click(object sender, RoutedEventArgs e) => await TestIntegrationAsync(false);
-    private async Task TestIntegrationAsync(bool on)
-    {
-        try { await SaveIntegrationAsync(false); await new HomeAssistantService().ExecuteAsync(Config.Integration, on, CancellationToken.None); ShowInfo(IntegrationInfoBar, $"Test {(on ? "ON" : "OFF")} succeeded", "Home Assistant accepted the request.", InfoBarSeverity.Success); }
-        catch (Exception ex) { Report(IntegrationInfoBar, "Integration test failed", ex); }
+        var loading = _loadingValues;
+        _loadingValues = true;
+        IntegrationToggle.IsOn = Config.Integration.Enabled;
+        _loadingValues = loading;
+        HaHostText.Text = Config.Integration.Host;
+        HaEntityText.Text = Config.Integration.Entity;
+        HaTokenBox.Password = "";
+        HaTokenBox.PlaceholderText = string.IsNullOrEmpty(Config.Integration.ProtectedToken) ? "Paste the token" : "Saved. Paste a new one to replace it";
     }
 
-    private void StartupToggle_Toggled(object sender, RoutedEventArgs e) { if (_loadingValues) return; try { _host.SetStartWithWindows(StartupToggle.IsOn); ShowInfo(SettingsInfoBar, "Startup setting updated", StartupToggle.IsOn ? "SimRigMode will launch when you sign in." : "SimRigMode will not launch automatically.", InfoBarSeverity.Success); } catch (Exception ex) { Report(SettingsInfoBar, "Startup setting failed", ex); } }
+    private async void IntegrationToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingValues) return;
+        try
+        {
+            Config.Integration.Enabled = IntegrationToggle.IsOn;
+            await _host.Configuration.SaveAsync();
+            UpdateSummaries();
+            await CheckIntegrationAsync();
+        }
+        catch (Exception ex) { Report(IntegrationInfoBar, "Home Assistant settings could not be saved", ex); }
+    }
+
+    private async void Integration_LostFocus(object sender, RoutedEventArgs e) => await CommitIntegrationAsync();
+
+    private async void Integration_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter) return;
+        e.Handled = true;
+        await CommitIntegrationAsync();
+    }
+
+    /// <summary>Saves the three fields as they are and checks the connection. There is no save
+    /// button; the switch above them decides whether a mode switch uses them.</summary>
+    private async Task CommitIntegrationAsync()
+    {
+        try
+        {
+            var integration = Config.Integration;
+            var host = HaHostText.Text.Trim();
+            var entity = HaEntityText.Text.Trim().ToLowerInvariant();
+            var token = HaTokenBox.Password.Trim();
+            if (host == integration.Host && entity == integration.Entity && token.Length == 0) return;
+            integration.Host = host;
+            integration.Entity = entity;
+            if (token.Length > 0) integration.ProtectedToken = HomeAssistantService.Protect(token);
+            await _host.Configuration.SaveAsync();
+            LoadIntegration();
+            UpdateSummaries();
+            await CheckIntegrationAsync();
+        }
+        catch (Exception ex) { Report(IntegrationInfoBar, "Home Assistant settings could not be saved", ex); }
+    }
+
+    private int _integrationCheck;
+
+    /// <summary>Reads the entity from Home Assistant - never switches it - and says what it found.</summary>
+    private async Task CheckIntegrationAsync()
+    {
+        var integration = Config.Integration;
+        var check = ++_integrationCheck;
+        if (!integration.Enabled)
+        {
+            SetIntegrationStatus(null, "Off. Switching leaves the rig's power alone.");
+            return;
+        }
+        if (!integration.IsSetUp)
+        {
+            var missing = new[] { (integration.Host, "host"), (integration.ProtectedToken, "access token"), (integration.Entity, "entity") }
+                .Where(field => string.IsNullOrWhiteSpace(field.Item1)).Select(field => field.Item2).ToList();
+            SetIntegrationStatus(null, missing.Count == 3
+                ? "Not set up yet. Until it is, switching leaves the rig's power alone."
+                : $"Add the {(missing.Count == 1 ? missing[0] : string.Join(", ", missing.Take(missing.Count - 1)) + " and " + missing[^1])} to finish setting it up.");
+            return;
+        }
+        SetIntegrationStatus(null, "Checking…");
+        var status = await _host.HomeAssistant.CheckAsync(integration, CancellationToken.None);
+        if (check != _integrationCheck) return;   // the fields changed again meanwhile
+        SetIntegrationStatus(status.Connected, status.Message);
+    }
+
+    private void SetIntegrationStatus(bool? connected, string message)
+    {
+        IntegrationStatusIcon.Glyph = connected switch { true => "\uE73E", false => "\uE7BA", null => "" };
+        IntegrationStatusIcon.Foreground = (Brush)Application.Current.Resources[connected switch
+        {
+            true => "SystemFillColorSuccessBrush",
+            false => "SystemFillColorCriticalBrush",
+            null => "TextFillColorSecondaryBrush"
+        }];
+        IntegrationStatusIcon.Visibility = connected is null ? Visibility.Collapsed : Visibility.Visible;
+        IntegrationStatusText.Text = message;
+    }
+
+    private void StartupToggle_Toggled(object sender, RoutedEventArgs e) { if (_loadingValues) return; try { _host.SetStartWithWindows(StartupToggle.IsOn); ShowInfo(SettingsInfoBar, "Startup setting updated", StartupToggle.IsOn ? "Pitlane will launch when you sign in." : "Pitlane will not launch automatically.", InfoBarSeverity.Success); } catch (Exception ex) { Report(SettingsInfoBar, "Startup setting failed", ex); } }
     private void HotkeysToggle_Toggled(object sender, RoutedEventArgs e) { HotkeysExpander.IsExpanded = HotkeysToggle.IsOn; }
     private async void Delay_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
@@ -541,21 +1153,55 @@ public sealed partial class SettingsWindow : Window
         catch (Exception ex) { Report(SettingsInfoBar, "Setting could not be saved", ex); }
     }
 
-    private async void PersistDisplayDefault_Click(object sender, RoutedEventArgs e)
+    // ===== Advanced ======================================================================
+
+    /// <summary>The mode the last test ran, so Toggle alternates. Tests do not change the mode on
+    /// record, so that cannot be what Toggle goes by after the first one.</summary>
+    private WorkspaceMode? _lastTest;
+
+    /// <summary>
+    /// A real switch minus the display step, for trying linked apps, Home Assistant, audio and
+    /// USB rules without the monitors rearranging. The mode Pitlane shows stays the one that is
+    /// really active. Toggle alternates, starting from the mode that is not active.
+    /// </summary>
+    private async void TestSwitch_Click(object sender, RoutedEventArgs e)
     {
+        if (sender is not Button { Tag: string tag }) return;
+        var from = _lastTest ?? (Config.CurrentMode == WorkspaceMode.SimRig ? WorkspaceMode.SimRig : WorkspaceMode.Desktop);
+        var target = tag switch
+        {
+            "simrig" => WorkspaceMode.SimRig,
+            "desktop" => WorkspaceMode.Desktop,
+            _ => from == WorkspaceMode.SimRig ? WorkspaceMode.Desktop : WorkspaceMode.SimRig
+        };
+        var name = target == WorkspaceMode.SimRig ? "Sim Rig" : "Desktop";
+        Button[] buttons = [TestToggleButton, TestRigButton, TestDesktopButton];
+        foreach (var button in buttons) button.IsEnabled = false;
+        TestSwitchStatus.Visibility = Visibility.Visible;
+        TestSwitchStatus.Text = $"Running the {name} steps without the displays…";
+        var clock = Stopwatch.StartNew();
         try
         {
-            if (!await ConfirmAsync("Set as Windows default",
-                "This writes the display layout currently on screen into Windows' own display database, so Windows restores it by itself.\n\n" +
-                "Mode switching never does this. Use it only when the current layout is one you want Windows to remember.",
-                "Set as default")) return;
-
-            var result = await Task.Run(_host.Displays.PersistCurrentTopologyAsWindowsDefault);
-            if (result == 0) ShowInfo(SettingsInfoBar, "Saved as Windows default", "Windows will restore this layout by itself.", InfoBarSeverity.Success);
-            else ShowInfo(SettingsInfoBar, "Windows refused", $"The current layout could not be saved as the default (Win32 {result}).", InfoBarSeverity.Error);
+            var outcome = await _host.SwitchModeAsync(target, displays: false);
+            if (outcome.Error is null) _lastTest = target;
+            TestSwitchStatus.Text = TestSwitchReport(name, outcome, clock.Elapsed);
         }
-        catch (Exception ex) { Report(SettingsInfoBar, "Could not save the default layout", ex); }
+        catch (Exception ex) { TestSwitchStatus.Text = $"The test switch stopped: {ex.Message}"; }
+        finally { foreach (var button in buttons) button.IsEnabled = true; }
     }
+
+    private string TestSwitchReport(string name, App.SwitchOutcome outcome, TimeSpan elapsed)
+    {
+        if (outcome.Error is not null) return $"The {name} test stopped: {outcome.Error}";
+        var steps = outcome.Steps.Where(step => step.Name != ModeSwitchService.DisplaysLeftAlone).ToList();
+        var problems = steps.Where(step => !step.Success).Select(step => $"{step.Name}: {step.Detail}").ToList();
+        var took = $"{elapsed.TotalSeconds:0.0} s";
+        if (Config.General.DryRunTransitions) return $"Dry run is on, so the {name} test changed nothing ({took}).";
+        if (problems.Count > 0) return $"Ran the {name} steps in {took}, displays untouched, with problems. {string.Join(" ", problems)}";
+        if (steps.Count == 0) return $"Ran the {name} steps in {took}, displays untouched. Nothing else is set up for {name}: no apps, Home Assistant, audio or USB rules.";
+        return $"Ran the {name} steps in {took}, displays untouched. Done: {string.Join(", ", steps.Select(step => step.Name))}.";
+    }
+
     private async void SaveGeneral_Click(object sender, RoutedEventArgs e)
     {
         try { ReadGeneralControls(); await _host.Configuration.SaveAsync(); _host.ConfigureHotkeys(); ShowInfo(SettingsInfoBar, "Settings saved", "General settings and global shortcuts are active.", InfoBarSeverity.Success); } catch (Exception ex) { Report(SettingsInfoBar, "Settings could not be saved", ex); }
@@ -571,7 +1217,7 @@ public sealed partial class SettingsWindow : Window
     {
         try
         {
-            var picker = new FileSavePicker { SuggestedFileName = "SimRigMode-config" }; picker.FileTypeChoices.Add("JSON configuration", [".json"]); InitializePicker(picker);
+            var picker = new FileSavePicker { SuggestedFileName = "Pitlane-config" }; picker.FileTypeChoices.Add("JSON configuration", [".json"]); InitializePicker(picker);
             var file = await picker.PickSaveFileAsync(); if (file is not null) { await _host.Configuration.ExportAsync(file.Path); ShowInfo(SettingsInfoBar, "Configuration exported", file.Path, InfoBarSeverity.Success); }
         }
         catch (Exception ex) { Report(SettingsInfoBar, "Export failed", ex); }
@@ -597,28 +1243,25 @@ public sealed partial class SettingsWindow : Window
     }
     private async void Reset_Click(object sender, RoutedEventArgs e)
     {
-        if (!await ConfirmAsync("Reset SimRigMode?", "This removes captured display profiles, device rules, audio choices, integration settings, and shortcuts.", "Reset")) return;
-        try { await _host.Configuration.ResetAsync(); _loadingValues = true; LoadConfigIntoControls(); _loadingValues = false; await RefreshUsbAsync(); await RefreshAudioAsync(); UpdateSummaries(); ShowInfo(SettingsInfoBar, "SimRigMode reset", "Default settings have been restored.", InfoBarSeverity.Success); } catch (Exception ex) { Report(SettingsInfoBar, "Reset failed", ex); }
+        if (!await ConfirmAsync("Reset Pitlane?", "This removes captured display profiles, device rules, audio choices, integration settings, and shortcuts.", "Reset")) return;
+        try { await _host.Configuration.ResetAsync(); _loadingValues = true; LoadConfigIntoControls(); _loadingValues = false; await RefreshUsbAsync(); await RefreshAudioAsync(); UpdateSummaries(); ShowInfo(SettingsInfoBar, "Pitlane reset", "Default settings have been restored.", InfoBarSeverity.Success); } catch (Exception ex) { Report(SettingsInfoBar, "Reset failed", ex); }
     }
     private void OpenLogs_Click(object sender, RoutedEventArgs e) => Process.Start(new ProcessStartInfo(_host.Log.LogDirectory) { UseShellExecute = true });
     private void InitializePicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
 
     private void UpdateSummaries()
     {
-        var current = Config.CurrentMode == WorkspaceMode.Desktop ? "Desktop mode" : Config.CurrentMode == WorkspaceMode.SimRig ? "Sim rig mode" : "Mode not selected";
-        CurrentModeCard.Header = current; CurrentModeCard.Description = Config.CurrentMode == WorkspaceMode.Unknown ? "Choose a workspace to begin." : $"{current} is currently active.";
-        DesktopWorkspaceCard.Description = WorkspaceDescription(Config.Desktop, WorkspaceMode.Desktop); RigWorkspaceCard.Description = WorkspaceDescription(Config.SimRig, WorkspaceMode.SimRig);
         DesktopDisplayCard.Description = SnapshotDescription(Config.Desktop.Displays); RigDisplayCard.Description = SnapshotDescription(Config.SimRig.Displays);
-        DesktopReadinessCard.Description = Config.Desktop.Displays is null ? "Not captured" : $"Captured with {Config.Desktop.Displays.Paths.Count} displays"; RigReadinessCard.Description = Config.SimRig.Displays is null ? "Not captured" : $"Captured with {Config.SimRig.Displays.Paths.Count} displays";
-        IntegrationReadinessCard.Description = Config.Integration.Enabled ? "Enabled" : "Disabled"; RigPowerCard.Description = Config.Integration.Enabled ? "Enabled for workspace transitions" : "Home Assistant integration disabled";
+        RenderOverview();
+        RigPowerCard.Description = Config.Integration.IsActive ? $"Home Assistant turns {Config.Integration.Entity} on and off" : !Config.Integration.Enabled ? "Home Assistant control is off" : "Not set up. Integrations has the three fields it needs";
         var desktopRules = Config.UsbRules.Count(r => r.Desktop != DeviceModeAction.DoNotChange); var rigRules = Config.UsbRules.Count(r => r.SimRig != DeviceModeAction.DoNotChange);
         DesktopUsbCard.Description = desktopRules == 0 ? "No device rules" : $"{desktopRules} device rules configured"; RigUsbCard.Description = rigRules == 0 ? "No device rules" : $"{rigRules} device rules configured";
         DesktopAudioCard.Description = AudioDescription(Config.Desktop.Audio); RigAudioCard.Description = AudioDescription(Config.SimRig.Audio);
-        DesktopSwitchButton.Style = Config.CurrentMode == WorkspaceMode.Desktop ? null : (Style)Application.Current.Resources["AccentButtonStyle"];
-        RigSwitchButton.Style = Config.CurrentMode == WorkspaceMode.SimRig ? null : (Style)Application.Current.Resources["AccentButtonStyle"];
+        DesktopAppsCard.Description = AppsDescription(Config.Desktop); RigAppsCard.Description = AppsDescription(Config.SimRig);
     }
-    private string WorkspaceDescription(ModeConfig mode, WorkspaceMode workspace) { var displays = mode.Displays?.Paths.Count ?? 0; var rules = Config.UsbRules.Count(r => (workspace == WorkspaceMode.Desktop ? r.Desktop : r.SimRig) != DeviceModeAction.DoNotChange); return $"{displays} display{(displays == 1 ? "" : "s")}  •  {(rules == 0 ? "No USB rules" : $"{rules} USB rules")}"; }
     private static string SnapshotDescription(DisplaySnapshot? snapshot) => snapshot is null ? "No profile captured" : $"{snapshot.Paths.Count} displays  •  Captured {snapshot.CapturedUtc.ToLocalTime():g}";
+    private static string AppsDescription(ModeConfig mode) =>
+        mode.LinkedApps.Count == 0 ? "No apps linked" : string.Join(", ", mode.LinkedApps.Select(app => app.StartWithMode ? app.Name : app.Name + " (not started)"));
     private static string AudioDescription(AudioSelection audio) => new[] { audio.PlaybackDefaultId, audio.PlaybackCommunicationsId, audio.RecordingDefaultId, audio.RecordingCommunicationsId }.Any(x => !string.IsNullOrWhiteSpace(x)) ? "Custom endpoints configured" : "Do not change";
 
     private async Task<bool> ConfirmAsync(string title, string message, string confirm)

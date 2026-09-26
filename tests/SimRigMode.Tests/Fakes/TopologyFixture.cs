@@ -1,4 +1,5 @@
 using SimRigMode.Models;
+using SimRigMode.Services.Display;
 
 namespace SimRigMode.Tests.Fakes;
 
@@ -75,4 +76,24 @@ internal static class TopologyFixture
         => snapshot.With("PG27UCDM", DeskMonitorPath, GpuAdapterPath, adapter,
             sourceId: sourceId, targetId: 4355, width: 3840, height: 2160,
             refreshNumerator: 240000, refreshDenominator: 1000);
+
+    /// <summary>
+    /// The same monitor as QDC_ALL_PATHS reports it: connected, and drivable from
+    /// <paramref name="sources"/> - by default sources 0-3, like a four-head GPU, plus the
+    /// source it had when this fixture was captured.
+    /// </summary>
+    public static ConnectedTarget ToConnected(this DisplayPathRecord path, params uint[] sources)
+    {
+        var ids = sources.Length > 0 ? sources.ToList() : [0u, 1u, 2u, 3u];
+        if (sources.Length == 0 && !ids.Contains(path.SourceId)) ids.Add(path.SourceId);
+        return new ConnectedTarget
+        {
+            Adapter = path.TargetAdapter, TargetId = path.TargetId, SourceIds = ids,
+            MonitorDevicePath = path.MonitorDevicePath, FriendlyName = path.FriendlyName,
+            AdapterDevicePath = path.AdapterDevicePath,
+            EdidManufactureId = path.EdidManufactureId, EdidProductCodeId = path.EdidProductCodeId,
+            ConnectorInstance = path.ConnectorInstance, EdidIdsValid = path.EdidIdsValid,
+            OutputTechnology = path.OutputTechnology, IsIndirect = path.IsIndirect, IndirectReason = path.IndirectReason
+        };
+    }
 }
